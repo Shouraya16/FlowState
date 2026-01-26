@@ -120,3 +120,67 @@ The system will:
 | FR12 | System shall log complete workflow history |
 
 ---
+
+## 4. Non-Functional Requirements
+
+| Category | Requirement |
+|--------|-------------|
+| Performance | Response time < 2 seconds |
+| Security | Encrypted login, role-based access |
+| Reliability | System uptime ≥ 95% |
+| Usability | Easy dashboard navigation |
+| Maintainability | Modular code structure |
+| Scalability | Support up to 500 users |
+
+---
+
+## 5. External Interface Requirements
+
+### 5.1 User Interface
+- Login Page  
+- Dashboard  
+- Task Board  
+- Reports Page  
+
+---
+
+### 5.2 Hardware Interface
+- Standard computer or mobile browser  
+
+---
+
+### 5.3 Software Interface
+- Email API for notifications  
+- Database server  
+
+---
+
+## 6. System Features
+
+### Feature 1: User Management
+Users can register, log in, and have roles assigned.
+
+### Feature 2: Feature Request Submission
+Clients submit feature requests with priority and deadline.
+
+### Feature 3: Workflow Automation
+System automatically moves tasks between SDLC stages based on rules.
+
+### Feature 4: Task Monitoring
+Managers monitor task progress and performance metrics.
+
+### Feature 5: Testing & Deployment Simulation
+System simulates transitions between testing and deployment stages.
+
+---
+
+## 7. System Architecture
+
+The system follows a layered architecture:
+- Presentation Layer (Frontend UI)  
+- Application Layer (Backend APIs)  
+- Workflow Engine Layer  
+- Database Layer  
+
+---
+
