@@ -25,7 +25,6 @@ The system will:
 - Accept feature requests  
 - Assign tasks automatically  
 - Track development progress  
-- Simulate testing and deployment  
 - Provide dashboards and reports  
 
 ---
@@ -169,9 +168,6 @@ System automatically moves tasks between SDLC stages based on rules.
 ### Feature 4: Task Monitoring
 Managers monitor task progress and performance metrics.
 
-### Feature 5: Testing & Deployment Simulation
-System simulates transitions between testing and deployment stages.
-
 ---
 
 ## 7. System Architecture
@@ -183,4 +179,3 @@ The system follows a layered architecture:
 - Database Layer  
 
 ---
-
