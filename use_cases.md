@@ -12,6 +12,14 @@ This document outlines the complete functional requirements for FlowState, mappi
 * Tester: Validates functionality.
 * Admin: Manages system configuration and users.
 
+### System Actors (Services)
+* *Authentication Service:* Handles identity, login, and access provisioning.
+* *Notification Service:* Handles emails, Slack messages, and real-time alerts.
+* *Deployment Service:* Manages CI/CD pipelines and production releases.
+* *Data Transfer Service:* Syncs data between external tools (GitHub, Jira, Calendar) and internal DB.
+
+---
+
 ## 1. Access & Identity Module
 Centralized security managed by the Auth Service.
 
