@@ -124,3 +124,51 @@ Testing and releasing to production.
     4.  Notification Service emails Client: "Your feature is live!"
 
 ---
+
+## 5. HR & Operations Automations (Tentative)
+Internal process management.
+
+### UC-11: Apply for Leave
+* *Primary Actor:* Developer / Tester / Designer
+* *Secondary Actor:* Notification Service
+* *Description:* Employee submits leave request.
+* *Flow:*
+    1.  User selects dates.
+    2.  *Notification Service* alerts Manager for approval.
+    3.  Once approved, system updates "Availability DB" (which affects UC-07).
+
+### UC-12: Meeting Updates & Action Items
+* *Primary Actor:* All Users
+* *Secondary Actor:* Data Transfer Service
+* *Description:* Capture outcomes after a scheduled meeting.
+* *Flow:*
+    1.  *Data Transfer Service* detects Google Calendar event end.
+    2.  System prompts attendees to log "Action Items."
+    3.  Logged items are converted into new Tasks automatically.
+
+---
+
+## 6. Administration & Monitoring (Tentative)
+System health and configuration.
+
+### UC-13: System Configuration
+* *Primary Actor:* Admin
+* *Secondary Actor:* Data Transfer Service
+* *Description:* Configure integrations (Jira, Slack, GitHub keys).
+* *Flow:*
+    1.  Admin inputs API Keys.
+    2.  *Data Transfer Service* validates connectivity.
+
+### UC-14: View Dashboard & Metrics
+* *Primary Actor:* Manager / Admin
+* *Description:* View real-time project health.
+* *Flow:*
+    1.  System aggregates data: "Avg Resolution Time," "Active Bugs," "Team Availability."
+    2.  Displays charts and graphs.
+
+### UC-15: View Audit Logs
+* *Primary Actor:* Admin
+* *Description:* Compliance logging.
+* *Flow:*
+    1.  Admin views "Activity Log".
+    2.  System displays immutable history of every action taken by any actor.
