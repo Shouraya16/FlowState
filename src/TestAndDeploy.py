@@ -16,3 +16,12 @@ class Testing:
 
         print("Testing completed.")
         return TestResult(task_id, passed, report)
+
+class Deployment:
+    def deploy(self, test_result):
+        if test_result.is_successful():
+            print(f"Deploying Task {test_result.task_id} to production...")
+            return "DEPLOYMENT_SUCCESS"
+        else:
+            print("Deployment blocked due to failed tests.")
+            return "DEPLOYMENT_FAILED"
