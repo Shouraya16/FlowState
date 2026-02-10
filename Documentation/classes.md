@@ -1,6 +1,6 @@
-### Q1. Key Classes, Attributes, and Method Definitions
+### Key Classes, Attributes, and Method Definitions
 
-Here are the identified classes with their Visibility Modifiers:
+Visibility Modifiers:
 * `+` **Public** (Accessible by everyone)
 * `-` **Private** (Accessible only within the class)
 * `#` **Protected** (Accessible by subclasses)
