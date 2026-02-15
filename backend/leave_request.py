@@ -37,3 +37,15 @@ class LeaveRequest:
         if self.status != "APPROVED":
             return False
         return self.start_date <= check_date <= self.end_date
+
+    def get_leave_details(self):
+        return {
+            "Leave ID": self.leave_id,
+            "Employee ID": self.employee_id,
+            "Start Date": self.start_date,
+            "End Date": self.end_date,
+            "Reason": self.reason,
+            "Status": self.status,
+            "Approved By": self.approved_by,
+            "Created At": self.created_at
+        }
