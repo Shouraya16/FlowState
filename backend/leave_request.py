@@ -13,3 +13,8 @@ class LeaveRequest:
         self.status = "PENDING"
         self.approved_by = None
         self.created_at = datetime.now()
+
+    def validate_dates(self):
+        if self.end_date < self.start_date:
+            raise ValueError("End date cannot be before start date.")
+        return True
