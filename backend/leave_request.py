@@ -25,3 +25,10 @@ class LeaveRequest:
         self.status = "APPROVED"
         self.approved_by = manager_id
         print(f"Leave request {self.leave_id} approved by Manager {manager_id}")
+
+    def reject(self, manager_id):
+        if self.status != "PENDING":
+            raise Exception("Only pending requests can be rejected.")
+        self.status = "REJECTED"
+        self.approved_by = manager_id
+        print(f"Leave request {self.leave_id} rejected by Manager {manager_id}")
