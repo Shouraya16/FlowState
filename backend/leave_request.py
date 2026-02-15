@@ -18,3 +18,10 @@ class LeaveRequest:
         if self.end_date < self.start_date:
             raise ValueError("End date cannot be before start date.")
         return True
+
+    def approve(self, manager_id):
+        if self.status != "PENDING":
+            raise Exception("Only pending requests can be approved.")
+        self.status = "APPROVED"
+        self.approved_by = manager_id
+        print(f"Leave request {self.leave_id} approved by Manager {manager_id}")
