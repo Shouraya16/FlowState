@@ -32,3 +32,8 @@ class LeaveRequest:
         self.status = "REJECTED"
         self.approved_by = manager_id
         print(f"Leave request {self.leave_id} rejected by Manager {manager_id}")
+
+    def is_active_on(self, check_date):
+        if self.status != "APPROVED":
+            return False
+        return self.start_date <= check_date <= self.end_date
