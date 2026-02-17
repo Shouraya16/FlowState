@@ -102,7 +102,7 @@ This demonstrates academically correct layering and proper granularity.
 
 ## 1. Scalability
 
-In a layered monolithic architecture, all layers exist within a single deployment unit.
+In a layered architecture, all layers exist within a single deployment unit.
 
 If traffic increases, the entire application is replicated:
 
