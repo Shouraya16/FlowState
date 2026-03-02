@@ -26,6 +26,12 @@ We will use a cloud provider like Amazon Web Services (AWS) (or an equivalent li
 #### 3. Security Mechanisms
 * *Network Security (VPC & Firewalls):* The architecture uses an AWS Virtual Private Cloud (VPC). The Frontend and Backend sit in a Public Subnet (accessible via the internet), but the AWS RDS Database sits in a Private Subnet. A Security Group (firewall) ensures the database only accepts connections originating from the backend EC2 instance.
 * *Encryption in Transit:* All communication between the User, Frontend, and Backend is encrypted using HTTPS/TLS 1.2+ via an SSL certificate.
+
+
+### II. User Access & System Interaction
+
+#### How End Users Access the Services
+End users (Clients, Managers, Developers, etc.) access the FlowState platform via a standard Web Browser (Chrome, Firefox, Safari) on their desktop or mobile device. They navigate to a specific URL (e.g., app.flowstate.com), which loads the Presentation Layer (Frontend UI).
 * *Authentication & Authorization:* The Access & Identity component generates JWT (JSON Web Tokens) upon login. Every subsequent API call must include this token in the HTTP header, which the backend validates to enforce Role-Based Access Control (RBAC).
 * *Password Security:* Passwords are never stored in plaintext. They are hashed using bcrypt before being saved to the database.
 
