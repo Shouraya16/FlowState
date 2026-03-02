@@ -22,3 +22,12 @@ We will use a cloud provider like Amazon Web Services (AWS) (or an equivalent li
    * CORS (Cross-Origin Resource Sharing) is configured on the backend server to strictly accept API calls only from the designated frontend domain (e.g., https://app.flowstate.com).
 
 
+
+#### 3. Security Mechanisms
+* *Network Security (VPC & Firewalls):* The architecture uses an AWS Virtual Private Cloud (VPC). The Frontend and Backend sit in a Public Subnet (accessible via the internet), but the AWS RDS Database sits in a Private Subnet. A Security Group (firewall) ensures the database only accepts connections originating from the backend EC2 instance.
+* *Encryption in Transit:* All communication between the User, Frontend, and Backend is encrypted using HTTPS/TLS 1.2+ via an SSL certificate.
+* *Authentication & Authorization:* The Access & Identity component generates JWT (JSON Web Tokens) upon login. Every subsequent API call must include this token in the HTTP header, which the backend validates to enforce Role-Based Access Control (RBAC).
+* *Password Security:* Passwords are never stored in plaintext. They are hashed using bcrypt before being saved to the database.
+
+---
+
