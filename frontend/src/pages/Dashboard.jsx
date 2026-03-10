@@ -1,12 +1,30 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+
 function Dashboard() {
-  const user = localStorage.getItem("user")
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if(!token){
+      navigate("/login");
+    }
+
+  }, []);
 
   return (
+
     <div className="container">
-      <h2>Welcome, {user}</h2>
-      <p>You can submit new feature requests from the menu.</p>
+
+      <h2>Dashboard</h2>
+
+      <p>Welcome to FlowState dashboard.</p>
+
     </div>
-  )
+
+  );
 }
 
-export default Dashboard
+export default Dashboard;
