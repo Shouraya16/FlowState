@@ -29,7 +29,7 @@ class WorkflowEngine:
         return task_id
 
 # --- Execution Example (What happens when the API is called) ---
-if _name_ == "_main_":
+if __name__ == "_main_":
     engine = WorkflowEngine()
     # Simulate API triggering the engine
     created_task = engine.process_manager_approval(req_id=42, manager_id=7)
