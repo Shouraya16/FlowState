@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-function Login() {
+function Signup() {
 
   const [email,setEmail] = useState("");
   const [password,setPassword] = useState("");
 
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
+  const handleSignup = async (e) => {
+
     e.preventDefault();
 
-    const res = await fetch("http://localhost:5000/login",{
+    const res = await fetch("http://localhost:5000/signup",{
       method:"POST",
       headers:{
         "Content-Type":"application/json"
@@ -22,26 +23,21 @@ function Login() {
     const data = await res.json();
 
     if(res.ok){
-
-      localStorage.setItem("token",data.token);
-
-      navigate("/dashboard");
-      window.location.reload();
-
+      alert("Account created!");
+      navigate("/login");
     } else {
-
       alert(data.error);
-
     }
+
   };
 
   return (
 
     <div className="container">
 
-      <h2>Login</h2>
+      <h2>Signup</h2>
 
-      <form onSubmit={handleLogin}>
+      <form onSubmit={handleSignup}>
 
         <input
           type="email"
@@ -57,7 +53,7 @@ function Login() {
           onChange={(e)=>setPassword(e.target.value)}
         />
 
-        <button type="submit">Login</button>
+        <button type="submit">Signup</button>
 
       </form>
 
@@ -66,4 +62,4 @@ function Login() {
   );
 }
 
-export default Login;
+export default Signup;
