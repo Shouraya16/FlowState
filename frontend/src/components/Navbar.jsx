@@ -1,49 +1,77 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom"
+import { useState, useEffect } from "react"
 
-function Navbar() {
+function Navbar(){
 
-  const navigate = useNavigate();
-  const [loggedIn, setLoggedIn] = useState(false);
+const navigate = useNavigate()
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    setLoggedIn(!!token);
-  }, []);
+const [role,setRole] = useState(null)
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    setLoggedIn(false);
-    navigate("/");
-  };
+useEffect(()=>{
 
-  return (
-    <nav className="navbar">
+const token = localStorage.getItem("token")
+const userRole = localStorage.getItem("role")
 
-      <h3>FlowState</h3>
-
-      <div>
-
-        {!loggedIn && (
-          <>
-            <Link to="/">Home</Link>
-            <Link to="/login">Login</Link>
-            <Link to="/signup">Signup</Link>
-          </>
-        )}
-
-        {loggedIn && (
-          <>
-            <Link to="/dashboard">Dashboard</Link>
-            <Link to="/feature">Feature Request</Link>
-            <button onClick={handleLogout}>Logout</button>
-          </>
-        )}
-
-      </div>
-
-    </nav>
-  );
+if(token){
+setRole(userRole)
 }
 
-export default Navbar;
+},[])
+
+const handleLogout = () => {
+
+localStorage.removeItem("token")
+localStorage.removeItem("role")
+
+navigate("/")
+window.location.reload()
+
+}
+
+return(
+
+<nav className="navbar">
+
+<h2>FlowState</h2>
+
+<div>
+
+{!role && (
+<>
+<Link to="/">Home</Link>
+<Link to="/login">Login</Link>
+<Link to="/signup">Signup</Link>
+</>
+)}
+
+{role==="CLIENT" && (
+<>
+<Link to="/dashboard">Dashboard</Link>
+<Link to="/feature">Submit Request</Link>
+<button onClick={handleLogout}>Logout</button>
+</>
+)}
+
+{role==="ADMIN" && (
+<>
+<Link to="/dashboard">Admin Panel</Link>
+<button onClick={handleLogout}>Logout</button>
+</>
+)}
+
+{role==="EMPLOYEE" && (
+<>
+<Link to="/dashboard">Employee Dashboard</Link>
+<button onClick={handleLogout}>Logout</button>
+</>
+)}
+
+</div>
+
+</nav>
+
+)
+
+}
+
+export default Navbar

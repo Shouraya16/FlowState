@@ -1,30 +1,17 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import ClientDashboard from "./ClientDashboard"
+import AdminDashboard from "./AdminDashboard"
+import EmployeeDashboard from "./EmployeeDashboard"
 
-function Dashboard() {
+function Dashboard(){
 
-  const navigate = useNavigate();
+const role = localStorage.getItem("role")
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
+if(role==="CLIENT") return <ClientDashboard/>
+if(role==="ADMIN") return <AdminDashboard/>
+if(role==="EMPLOYEE") return <EmployeeDashboard/>
 
-    if(!token){
-      navigate("/login");
-    }
+return <h2>No Access</h2>
 
-  }, []);
-
-  return (
-
-    <div className="container">
-
-      <h2>Dashboard</h2>
-
-      <p>Welcome to FlowState dashboard.</p>
-
-    </div>
-
-  );
 }
 
-export default Dashboard;
+export default Dashboard

@@ -1,69 +1,80 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
-function Login() {
+function Login(){
 
-  const [email,setEmail] = useState("");
-  const [password,setPassword] = useState("");
+const navigate = useNavigate()
 
-  const navigate = useNavigate();
+const [email,setEmail] = useState("")
+const [password,setPassword] = useState("")
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+const handleLogin = async(e)=>{
 
-    const res = await fetch("http://localhost:5000/login",{
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json"
-      },
-      body: JSON.stringify({email,password})
-    });
+e.preventDefault()
 
-    const data = await res.json();
+const res = await fetch("http://localhost:8000/auth/login",{
 
-    if(res.ok){
+method:"POST",
 
-      localStorage.setItem("token",data.token);
+headers:{
+"Content-Type":"application/json"
+},
 
-      navigate("/dashboard");
-      window.location.reload();
+body:JSON.stringify({
+email,
+password
+})
 
-    } else {
+})
 
-      alert(data.error);
+const data = await res.json()
 
-    }
-  };
+if(res.ok){
 
-  return (
+localStorage.setItem("token",data.access_token)
+localStorage.setItem("role",data.user_type)
 
-    <div className="container">
+navigate("/dashboard")
+window.location.reload()
 
-      <h2>Login</h2>
+}else{
 
-      <form onSubmit={handleLogin}>
+alert(data.detail || "Login failed")
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e)=>setEmail(e.target.value)}
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e)=>setPassword(e.target.value)}
-        />
-
-        <button type="submit">Login</button>
-
-      </form>
-
-    </div>
-
-  );
 }
 
-export default Login;
+}
+
+return(
+
+<div className="container">
+
+<h2>Login</h2>
+
+<form onSubmit={handleLogin}>
+
+<input
+type="email"
+placeholder="Email"
+value={email}
+onChange={(e)=>setEmail(e.target.value)}
+/>
+
+<input
+type="password"
+placeholder="Password"
+value={password}
+onChange={(e)=>setPassword(e.target.value)}
+/>
+
+<button type="submit">Login</button>
+
+</form>
+
+</div>
+
+)
+
+}
+
+export default Login
