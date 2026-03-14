@@ -24,13 +24,14 @@ function Login() {
     if(res.ok){
 
       localStorage.setItem("token",data.token);
+      localStorage.setItem("role", data.role);
 
       navigate("/dashboard");
       window.location.reload();
 
     } else {
 
-      alert(data.error);
+      alert(data.error || "Login failed.");
 
     }
   };
@@ -48,6 +49,7 @@ function Login() {
           placeholder="Email"
           value={email}
           onChange={(e)=>setEmail(e.target.value)}
+          required
         />
 
         <input
@@ -55,6 +57,7 @@ function Login() {
           placeholder="Password"
           value={password}
           onChange={(e)=>setPassword(e.target.value)}
+          required
         />
 
         <button type="submit">Login</button>
