@@ -1,46 +1,70 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from database import get_db
-from schema import User, UserType
-
+from schema import User
 from utils.security import hash_password, verify_password
 from utils.jwt_handler import create_token
 
 router = APIRouter(prefix="/auth")
 
 
-@router.post("/signup")
-def signup(email: str, password: str, user_type: UserType, db: Session = Depends(get_db)):
+# -------------------------
+# Request models
+# -------------------------
 
-    existing_user = db.query(User).filter(User.email == email).first()
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    user_type: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+# -------------------------
+# Signup API
+# -------------------------
+
+@router.post("/signup")
+def signup(data: SignupRequest, db: Session = Depends(get_db)):
+
+    existing_user = db.query(User).filter(User.email == data.email).first()
 
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="User already exists")
 
-    hashed_pw = hash_password(password)
+    hashed_pw = hash_password(data.password)
 
-    user = User(
-        email=email,
+    new_user = User(
+        email=data.email,
         password_hash=hashed_pw,
-        user_type=user_type
+        user_type=data.user_type
     )
 
-    db.add(user)
+    db.add(new_user)
     db.commit()
-    db.refresh(user)
+    db.refresh(new_user)
 
-    return {"message": "User created"}
+    return {"message": "User created successfully"}
+
+
+# -------------------------
+# Login API
+# -------------------------
 
 @router.post("/login")
-def login(email: str, password: str, db: Session = Depends(get_db)):
+def login(data: LoginRequest, db: Session = Depends(get_db)):
 
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.email == data.email).first()
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(password, user.password_hash):
+    if not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user.id)

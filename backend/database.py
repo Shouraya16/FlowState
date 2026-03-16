@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:yourpassword@localhost:5432/flowstate_db"
+    "postgresql://postgres:sam1405@localhost:5432/flowstate_db"
 )
 
 engine = create_engine(
