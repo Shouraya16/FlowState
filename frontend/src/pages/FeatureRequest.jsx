@@ -55,12 +55,14 @@ type="text"
 placeholder="Title"
 value={title}
 onChange={(e)=>setTitle(e.target.value)}
+required
 />
 
 <textarea
 placeholder="Describe feature..."
 value={description}
 onChange={(e)=>setDescription(e.target.value)}
+required
 />
 
 <button type="submit">Submit</button>

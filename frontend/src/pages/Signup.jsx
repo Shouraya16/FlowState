@@ -34,7 +34,6 @@ const data = await res.json()
 if(res.ok){
 
 alert("Account created")
-
 navigate("/login")
 
 }else{
@@ -58,6 +57,7 @@ type="email"
 placeholder="Email"
 value={email}
 onChange={(e)=>setEmail(e.target.value)}
+required
 />
 
 <input
@@ -65,6 +65,7 @@ type="password"
 placeholder="Password"
 value={password}
 onChange={(e)=>setPassword(e.target.value)}
+required
 />
 
 <select
@@ -73,8 +74,11 @@ onChange={(e)=>setRole(e.target.value)}
 >
 
 <option value="CLIENT">Client</option>
+<option value="MANAGER">Manager</option>
+<option value="DEVELOPER">Developer</option>
+<option value="TESTER">Tester</option>
+<option value="DESIGNER">Designer</option>
 <option value="ADMIN">Admin</option>
-<option value="EMPLOYEE">Employee</option>
 
 </select>
 

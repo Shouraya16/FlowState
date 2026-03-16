@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 function Navbar(){
 
 const navigate = useNavigate()
-
 const [role,setRole] = useState(null)
 
 useEffect(()=>{
@@ -44,24 +43,14 @@ return(
 </>
 )}
 
-{role==="CLIENT" && (
+{role && (
 <>
 <Link to="/dashboard">Dashboard</Link>
+
+{role==="CLIENT" && (
 <Link to="/feature">Submit Request</Link>
-<button onClick={handleLogout}>Logout</button>
-</>
 )}
 
-{role==="ADMIN" && (
-<>
-<Link to="/dashboard">Admin Panel</Link>
-<button onClick={handleLogout}>Logout</button>
-</>
-)}
-
-{role==="EMPLOYEE" && (
-<>
-<Link to="/dashboard">Employee Dashboard</Link>
 <button onClick={handleLogout}>Logout</button>
 </>
 )}
