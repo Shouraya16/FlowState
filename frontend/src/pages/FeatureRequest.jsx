@@ -2,77 +2,73 @@ import { useState } from "react"
 
 function FeatureRequest(){
 
-const [title,setTitle] = useState("")
-const [description,setDescription] = useState("")
+  const [title, setTitle] = useState("")
+  const [description, setDescription] = useState("")
 
-const handleSubmit = async(e)=>{
+  const handleSubmit = async (e) => {
+    e.preventDefault()
 
-e.preventDefault()
+    const token = localStorage.getItem("token")   // 🔥 get token
 
-const token = localStorage.getItem("token")
+    try {
 
-const res = await fetch("http://localhost:8000/requests",{
+      const res = await fetch("http://localhost:8000/requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
 
-method:"POST",
+          // 🔥 THIS IS THE IMPORTANT LINE
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: title,
+          description: description
+        })
+      })
 
-headers:{
-"Content-Type":"application/json",
-"Authorization":"Bearer "+token
-},
+      const data = await res.json()
 
-body:JSON.stringify({
-title,
-description
-})
+      if(res.ok){
+        alert("Request submitted ✅")
+        setTitle("")
+        setDescription("")
+      } else {
+        alert(data.detail || "Error submitting request ❌")
+      }
 
-})
+    } catch(err){
+      console.log(err)
+      alert("Server error")
+    }
+  }
 
-if(res.ok){
+  return (
 
-alert("Feature request submitted!")
+    <div className="container">
+      <h2>Submit Feature Request</h2>
 
-setTitle("")
-setDescription("")
+      <form onSubmit={handleSubmit}>
 
-}else{
+        <input
+          type="text"
+          placeholder="Title"
+          value={title}
+          onChange={(e)=>setTitle(e.target.value)}
+          required
+        />
 
-alert("Failed")
+        <textarea
+          placeholder="Description"
+          value={description}
+          onChange={(e)=>setDescription(e.target.value)}
+          required
+        />
 
-}
+        <button type="submit">Submit</button>
 
-}
-
-return(
-
-<div className="container">
-
-<h2>Submit Feature Request</h2>
-
-<form onSubmit={handleSubmit}>
-
-<input
-type="text"
-placeholder="Title"
-value={title}
-onChange={(e)=>setTitle(e.target.value)}
-required
-/>
-
-<textarea
-placeholder="Describe feature..."
-value={description}
-onChange={(e)=>setDescription(e.target.value)}
-required
-/>
-
-<button type="submit">Submit</button>
-
-</form>
-
-</div>
-
-)
-
+      </form>
+    </div>
+  )
 }
 
 export default FeatureRequest

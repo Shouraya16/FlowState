@@ -31,8 +31,8 @@ const data = await res.json()
 
 if(res.ok){
 
-localStorage.setItem("token",data.access_token)
-localStorage.setItem("role",data.user_type)
+localStorage.setItem("token",data.token)
+localStorage.setItem("role",data.role)
 
 navigate("/dashboard")
 window.location.reload()

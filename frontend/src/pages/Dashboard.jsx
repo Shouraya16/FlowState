@@ -11,14 +11,17 @@ import AdminDashboard from "./AdminDashboard"
 function Dashboard(){
 
 const navigate = useNavigate()
+
 const token = localStorage.getItem("token")
-const role = localStorage.getItem("role")
+const role = localStorage.getItem("role")?.trim().toUpperCase()
 
 useEffect(()=>{
+
 if(!token){
 navigate("/login")
 }
-},[])
+
+},[token,navigate])
 
 if(!token) return null
 
@@ -43,7 +46,7 @@ case "ADMIN":
 return <AdminDashboard/>
 
 default:
-return <h2>No Access</h2>
+return <h2>No Access : {role}</h2>
 
 }
 

@@ -1,27 +1,68 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom"
 
-function Home() {
-  return (
-    <div className="container">
-      <h1>FlowState</h1>
+function Home(){
 
-      <p>
-        FlowState is a workflow management platform that helps teams convert
-        feature requests into structured development tasks while managing
-        approvals, assignments, and notifications efficiently.
-      </p>
+const navigate = useNavigate()
 
-      <div className="buttons">
-        <Link to="/login">
-          <button>Login</button>
-        </Link>
+return(
 
-        <Link to="/signup">
-          <button>Sign Up</button>
-        </Link>
-      </div>
-    </div>
-  );
+<div className="landing">
+
+<div className="hero">
+
+<h1>FlowState</h1>
+
+<p>
+
+Transform feature ideas into structured development workflows.
+
+Clients submit requests → Managers organize tasks →  
+Developers build → Testers validate → Products ship.
+
+</p>
+
+<div className="hero-buttons">
+
+<button className="primary" onClick={()=>navigate("/login")}>
+Login
+</button>
+
+<button className="secondary" onClick={()=>navigate("/signup")}>
+Get Started
+</button>
+
+</div>
+
+</div>
+
+<div className="features">
+
+<div className="feature-card">
+<h3>📩 Feature Requests</h3>
+<p>Clients easily submit product ideas and improvements.</p>
+</div>
+
+<div className="feature-card">
+<h3>⚙️ Task Management</h3>
+<p>Managers convert requests into structured development tasks.</p>
+</div>
+
+<div className="feature-card">
+<h3>💻 Developer Workflow</h3>
+<p>Developers receive tasks and track implementation progress.</p>
+</div>
+
+<div className="feature-card">
+<h3>🧪 QA Validation</h3>
+<p>Testers verify features before final deployment.</p>
+</div>
+
+</div>
+
+</div>
+
+)
+
 }
 
-export default Home;
+export default Home

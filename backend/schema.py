@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
+from pydantic import BaseModel
 import enum
 
 from database import Base
@@ -42,6 +43,10 @@ class TaskPriority(enum.Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+    
+class FeatureRequestCreate(BaseModel):
+    title: str
+    description: str
 
 
 # =========================================================
