@@ -45,29 +45,30 @@ function FeatureRequest(){
   return (
 
     <div className="container">
-      <h2>Submit Feature Request</h2>
+  <h2>Submit Feature Request</h2>
 
-      <form onSubmit={handleSubmit}>
+  <form onSubmit={handleSubmit}>
 
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={(e)=>setTitle(e.target.value)}
-          required
-        />
+    <input
+      type="text"
+      placeholder="Feature title..."
+      value={title}
+      onChange={(e)=>setTitle(e.target.value)}
+      required
+    />
 
-        <textarea
-          placeholder="Description"
-          value={description}
-          onChange={(e)=>setDescription(e.target.value)}
-          required
-        />
+    <textarea
+      placeholder="Describe your feature idea..."
+      value={description}
+      onChange={(e)=>setDescription(e.target.value)}
+      required
+      style={{minHeight:"120px"}}
+    />
 
-        <button type="submit">Submit</button>
+    <button type="submit">Submit Request</button>
 
-      </form>
-    </div>
+  </form>
+</div>
   )
 }
 

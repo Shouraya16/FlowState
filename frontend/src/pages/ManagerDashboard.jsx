@@ -1,120 +1,120 @@
-// ManagerDashboard.jsx
-// Shows pending approvals, team task overview, and key metrics
+import { useEffect, useState } from "react"
 
-const mockPendingRequests = [
-  { id: 1, title: "Add Dark Mode", client: "Acme Corp", date: "2025-03-05" },
-  { id: 2, title: "Mobile App Support", client: "TechStart", date: "2025-03-07" },
-  { id: 3, title: "Export to PDF", client: "Globex Inc", date: "2025-03-09" },
-];
+function ManagerDashboard(){
 
-const mockTeamTasks = [
-  { id: 101, title: "Implement Auth Module", assignee: "John (Dev)", status: "IN_PROGRESS" },
-  { id: 102, title: "Design Landing Page", assignee: "Sara (Designer)", status: "IN_PROGRESS" },
-  { id: 103, title: "Write API Tests", assignee: "Mike (Tester)", status: "TODO" },
-  { id: 104, title: "Fix Login Bug", assignee: "John (Dev)", status: "DONE" },
-];
+  const [requests, setRequests] = useState([])
+  const [filter, setFilter] = useState("PENDING") // default
 
-const statusColors = {
-  TODO: { bg: "#f3f4f6", color: "#374151" },
-  IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
-  DONE: { bg: "#dcfce7", color: "#166534" },
-};
+  useEffect(() => {
+    fetch("http://localhost:8000/requests")
+      .then(res => res.json())
+      .then(data => setRequests(data))
+  }, [])
 
-function ManagerDashboard() {
-  return (
-    <div className="dash-wrapper">
-      {/* Header */}
-      <div className="dash-header">
-        <div>
-          <h1 className="dash-title">Manager Dashboard</h1>
-          <p className="dash-subtitle">Oversee approvals, team tasks, and project health</p>
+  const pending = requests.filter(r => r.status === "PENDING")
+  const displayed =
+    filter === "ALL"
+      ? requests
+      : requests.filter(r => r.status === "PENDING")
+
+  const updateStatus = async (id, status) => {
+    await fetch(`http://localhost:8000/requests/${id}/status?status=${status}`, {
+      method: "PATCH"
+    })
+
+    // refresh without reload
+    setRequests(prev =>
+      prev.map(r => r.id === id ? {...r, status} : r)
+    )
+  }
+
+  return(
+    <div className="dashboard">
+
+      <h1>Manager Dashboard</h1>
+
+      {/* 🔥 CLICKABLE STATS */}
+      <div className="stats">
+
+        <div
+          className={`stat-card ${filter==="PENDING" ? "active" : ""}`}
+          onClick={() => setFilter("PENDING")}
+        >
+          <h2>{pending.length}</h2>
+          <p>Pending Approvals</p>
         </div>
+
+        <div
+          className={`stat-card ${filter==="ALL" ? "active" : ""}`}
+          onClick={() => setFilter("ALL")}
+        >
+          <h2>{requests.length}</h2>
+          <p>Total Requests</p>
+        </div>
+
       </div>
 
-      {/* Stats Row */}
-      <div className="stats-row">
-        <div className="stat-card">
-          <span className="stat-number">{mockPendingRequests.length}</span>
-          <span className="stat-label">Pending Approvals</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-number">{mockTeamTasks.length}</span>
-          <span className="stat-label">Total Tasks</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-number">
-            {mockTeamTasks.filter((t) => t.status === "IN_PROGRESS").length}
-          </span>
-          <span className="stat-label">In Progress</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-number">
-            {mockTeamTasks.filter((t) => t.status === "DONE").length}
-          </span>
-          <span className="stat-label">Completed</span>
-        </div>
-      </div>
+      {/* TABLE */}
+      <div className="table-card">
 
-      {/* Pending Approvals */}
-      <div className="dash-card">
-        <h3 className="card-title">⏳ Pending Approvals</h3>
-        <table className="dash-table">
+        <h3>
+          {filter === "ALL" ? "All Requests" : "Pending Requests"}
+        </h3>
+
+        <table>
           <thead>
             <tr>
               <th>#</th>
-              <th>Feature Request</th>
-              <th>Client</th>
-              <th>Date</th>
+              <th>Title</th>
+              <th>Description</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {mockPendingRequests.map((req) => (
-              <tr key={req.id}>
-                <td>{req.id}</td>
-                <td>{req.title}</td>
-                <td>{req.client}</td>
-                <td>{req.date}</td>
-                <td>
-                  <button className="action-btn approve-btn">Approve</button>
-                  <button className="action-btn reject-btn">Reject</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
-      {/* Team Task Overview */}
-      <div className="dash-card">
-        <h3 className="card-title">👥 Team Task Overview</h3>
-        <table className="dash-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Task</th>
-              <th>Assigned To</th>
-              <th>Status</th>
-            </tr>
-          </thead>
           <tbody>
-            {mockTeamTasks.map((task) => (
-              <tr key={task.id}>
-                <td>{task.id}</td>
-                <td>{task.title}</td>
-                <td>{task.assignee}</td>
+            {displayed.map(r => (
+              <tr key={r.id}>
+                <td>{r.id}</td>
+                <td>{r.title}</td>
+                <td>{r.description}</td>
+
                 <td>
-                  <span className="status-badge" style={statusColors[task.status]}>
-                    {task.status.replace("_", " ")}
+                  <span className={`status ${r.status.toLowerCase()}`}>
+                    {r.status}
                   </span>
                 </td>
+
+                <td>
+                  {r.status === "PENDING" && (
+                    <>
+                      <button
+                        className="approve-btn"
+                        onClick={() => updateStatus(r.id, "APPROVED")}
+                      >
+                        Approve
+                      </button>
+
+                      <button
+                        className="reject-btn"
+                        onClick={() => updateStatus(r.id, "REJECTED")}
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                </td>
+
               </tr>
             ))}
           </tbody>
+
         </table>
+
       </div>
+
     </div>
-  );
+  )
 }
 
-export default ManagerDashboard;
+export default ManagerDashboard

@@ -1,111 +1,90 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
-const mockRequests = [
-  { id: 1, title: "Add Dark Mode", status: "IN_PROGRESS", date: "2025-03-01" },
-  { id: 2, title: "Export to PDF", status: "PENDING", date: "2025-03-05" },
-  { id: 3, title: "Email Notifications", status: "APPROVED", date: "2025-02-20" },
-  { id: 4, title: "Mobile App Support", status: "REJECTED", date: "2025-02-10" },
-];
+function ClientDashboard(){
 
-const statusColors = {
-  PENDING: { background: "#fef9c3", color: "#854d0e" },
-  APPROVED: { background: "#dcfce7", color: "#166534" },
-  IN_PROGRESS: { background: "#dbeafe", color: "#1e40af" },
-  REJECTED: { background: "#fee2e2", color: "#991b1b" },
-};
+  const [requests, setRequests] = useState([])
 
-function ClientDashboard() {
+  useEffect(() => {
+    fetch("http://localhost:8000/requests")
+      .then(res => res.json())
+      .then(data => setRequests(data))
+  }, [])
 
-return (
+  const total = requests.length
+  const pending = requests.filter(r => r.status === "PENDING").length
+  const inProgress = requests.filter(r => r.status === "IN_PROGRESS").length
 
-<div className="dash-wrapper">
+  return(
+    <div className="dashboard">
 
-<div className="dash-header">
+      {/* HEADER */}
+      <div className="dash-header">
+        <div>
+          <h1>My Feature Requests</h1>
+          <p>Track the status of your submitted requests</p>
+        </div>
 
-<div>
-<h1 className="dash-title">My Feature Requests</h1>
-<p className="dash-subtitle">
-Track the status of your submitted requests
-</p>
-</div>
+        <Link to="/feature">
+          <button className="primary-btn">+ New Request</button>
+        </Link>
+      </div>
 
-<Link to="/feature">
-<button className="dash-primary-btn">+ New Request</button>
-</Link>
+      {/* STATS */}
+      <div className="stats">
 
-</div>
+        <div className="stat-card">
+          <h2>{total}</h2>
+          <p>Total</p>
+        </div>
 
-<div className="stats-row">
+        <div className="stat-card">
+          <h2>{pending}</h2>
+          <p>Pending</p>
+        </div>
 
-<div className="stat-card">
-<span className="stat-number">{mockRequests.length}</span>
-<span className="stat-label">Total Requests</span>
-</div>
+        <div className="stat-card">
+          <h2>{inProgress}</h2>
+          <p>In Progress</p>
+        </div>
 
-<div className="stat-card">
-<span className="stat-number">
-{mockRequests.filter(r => r.status === "PENDING").length}
-</span>
-<span className="stat-label">Pending</span>
-</div>
+      </div>
 
-<div className="stat-card">
-<span className="stat-number">
-{mockRequests.filter(r => r.status === "IN_PROGRESS").length}
-</span>
-<span className="stat-label">In Progress</span>
-</div>
+      {/* TABLE */}
+      <div className="table-card">
 
-</div>
+        <h3>Your Requests</h3>
 
-<div className="dash-card">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Title</th>
+              <th>Status</th>
+            </tr>
+          </thead>
 
-<h3 className="card-title">Your Requests</h3>
+          <tbody>
+            {requests.map((req) => (
+              <tr key={req.id}>
+                <td>{req.id}</td>
+                <td>{req.title}</td>
 
-<table className="dash-table">
+                <td>
+                  <span className={`status ${req.status.toLowerCase().replace("_","")}`}>
+                    {req.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
 
-<thead>
-<tr>
-<th>#</th>
-<th>Title</th>
-<th>Date Submitted</th>
-<th>Status</th>
-</tr>
-</thead>
+        </table>
 
-<tbody>
+      </div>
 
-{mockRequests.map(req => (
-
-<tr key={req.id}>
-
-<td>{req.id}</td>
-<td>{req.title}</td>
-<td>{req.date}</td>
-
-<td>
-<span
-className="status-badge"
-style={statusColors[req.status]}
->
-{req.status}
-</span>
-</td>
-
-</tr>
-
-))}
-
-</tbody>
-
-</table>
-
-</div>
-
-</div>
-
-)
-
+    </div>
+  )
 }
 
 export default ClientDashboard

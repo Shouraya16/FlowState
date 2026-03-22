@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schema import FeatureRequest, Client, FeatureRequestCreate
+from schema import FeatureRequest, Client, FeatureRequestCreate, RequestStatus
 from utils.jwt_handler import decode_token
 
 router = APIRouter(prefix="/requests", tags=["Feature Requests"])
@@ -51,3 +51,23 @@ def get_requests(db: Session = Depends(get_db)):
         }
         for r in requests
     ]
+    
+@router.patch("/{request_id}/status")
+def update_status(
+    request_id: int,
+    status: str,
+    db: Session = Depends(get_db)
+):
+    req = db.query(FeatureRequest).filter(FeatureRequest.id == request_id).first()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        req.status = RequestStatus(status)   # ✅ FIX
+    except:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    db.commit()
+
+    return {"message": "Status updated"}
