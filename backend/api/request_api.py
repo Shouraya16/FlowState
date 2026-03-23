@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schema import FeatureRequest, Client, FeatureRequestCreate, RequestStatus
+from schema import FeatureRequest, Client, FeatureRequestCreate, RequestStatus, Employee, EmployeeType
 from utils.jwt_handler import decode_token
 
 router = APIRouter(prefix="/requests", tags=["Feature Requests"])
@@ -17,9 +17,8 @@ def submit_request(
     user_id = token_data["user_id"]
 
     client = db.query(Client).filter(Client.user_id == user_id).first()
-
     if not client:
-        raise HTTPException(status_code=403, detail="Only clients allowed")
+        raise HTTPException(status_code=403, detail="Only clients can submit requests")
 
     new_request = FeatureRequest(
         client_id=client.id,
@@ -38,7 +37,10 @@ def submit_request(
 
 
 @router.get("")
-def get_requests(db: Session = Depends(get_db)):
+def get_requests(
+    db: Session = Depends(get_db),
+    token_data=Depends(decode_token)   # ← now requires auth
+):
     requests = db.query(FeatureRequest).all()
 
     return [
@@ -51,23 +53,31 @@ def get_requests(db: Session = Depends(get_db)):
         }
         for r in requests
     ]
-    
+
+
 @router.patch("/{request_id}/status")
 def update_status(
     request_id: int,
     status: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    token_data=Depends(decode_token)   # ← now requires auth
 ):
-    req = db.query(FeatureRequest).filter(FeatureRequest.id == request_id).first()
+    user_id = token_data["user_id"]
 
+    # Only managers can approve/reject
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+    if not employee or employee.employee_type != EmployeeType.MANAGER:
+        raise HTTPException(status_code=403, detail="Only managers can update request status")
+
+    req = db.query(FeatureRequest).filter(FeatureRequest.id == request_id).first()
     if not req:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Request not found")
 
     try:
-        req.status = RequestStatus(status)   # ✅ FIX
-    except:
+        req.status = RequestStatus(status)
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid status")
 
     db.commit()
 
-    return {"message": "Status updated"}
+    return {"message": "Status updated", "status": status}

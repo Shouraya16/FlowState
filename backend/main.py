@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth_api import router as auth_router
 from api.request_api import router as request_router
+from api.task_api import router as task_router
+from api.qa_api import router as qa_router
 
 from database import Base, engine
 import schema
@@ -19,9 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ INCLUDE BOTH ROUTERS
 app.include_router(auth_router)
 app.include_router(request_router)
+app.include_router(task_router)
+app.include_router(qa_router)
 
 
 @app.get("/")
