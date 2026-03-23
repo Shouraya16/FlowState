@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
+import { apiFetch } from "../utils/apiFetch"
 
 const statusColors = {
   TODO: { bg: "#f3f4f6", color: "#374151" },
   IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
-  READY_FOR_QA: { bg: "#fef3c7", color: "#92400e" },
   DONE: { bg: "#dcfce7", color: "#166534" },
+  READY_FOR_QA: { bg: "#f3e8ff", color: "#6b21a8" },
 }
 
 const priorityColors = {
@@ -13,121 +14,77 @@ const priorityColors = {
   LOW: { bg: "#dcfce7", color: "#166534" },
 }
 
-// The valid next status a developer can move a task to
-const NEXT_STATUS = {
-  TODO: "IN_PROGRESS",
-  IN_PROGRESS: "READY_FOR_QA",
-  READY_FOR_QA: null,
-  DONE: null,
-}
-
-const NEXT_LABEL = {
-  TODO: "Start Task",
-  IN_PROGRESS: "Send to QA",
-  READY_FOR_QA: null,
-  DONE: null,
-}
-
 function DeveloperDashboard() {
+
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [updating, setUpdating] = useState(null)
-
-  const token = localStorage.getItem("token")
 
   useEffect(() => {
-    fetchTasks()
+    apiFetch("/tasks/my-tasks")
+      .then(res => res.json())
+      .then(data => {
+        setTasks(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error("Failed to fetch tasks:", err)
+        setLoading(false)
+      })
   }, [])
 
-  const fetchTasks = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/tasks/my-tasks", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error("Failed to fetch tasks")
-      const data = await res.json()
-      setTasks(data)
-    } catch (err) {
-      setError("Could not load tasks. Make sure you are logged in.")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const updateStatus = async (taskId, newStatus) => {
-    setUpdating(taskId)
-    try {
-      const res = await fetch(`http://localhost:8000/tasks/${taskId}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        alert(data.detail || "Failed to update status")
-        return
-      }
-      // Update locally without full reload
+  const updateTaskStatus = async (taskId, newStatus) => {
+    const res = await apiFetch(`/tasks/${taskId}/status?status=${newStatus}`, {
+      method: "PATCH"
+    })
+    if (res.ok) {
       setTasks(prev =>
         prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t)
       )
-    } catch {
-      alert("Server error. Try again.")
-    } finally {
-      setUpdating(null)
+    } else {
+      alert("Failed to update task status")
     }
   }
 
-  if (loading) return <div className="dashboard"><p>Loading tasks...</p></div>
-  if (error) return <div className="dashboard"><p style={{ color: "red" }}>{error}</p></div>
-
-  const todo = tasks.filter(t => t.status === "TODO").length
-  const inProgress = tasks.filter(t => t.status === "IN_PROGRESS").length
-  const inQA = tasks.filter(t => t.status === "READY_FOR_QA").length
-  const done = tasks.filter(t => t.status === "DONE").length
-
   return (
-    <div className="dash-wrapper">
+    <div className="dash-wrapper" style={{ padding: "40px 60px" }}>
+
       <div className="dash-header">
         <div>
-          <h1 className="dash-title">Developer Dashboard</h1>
-          <p className="dash-subtitle">Your assigned tasks and development progress</p>
+          <h1>Developer Dashboard</h1>
+          <p style={{ color: "#6b7280", marginTop: "5px" }}>Your assigned tasks and development progress</p>
         </div>
       </div>
 
-      <div className="stats-row">
+      {/* STATS */}
+      <div className="stats">
         <div className="stat-card">
-          <span className="stat-number">{tasks.length}</span>
-          <span className="stat-label">Total</span>
+          <h2>{tasks.length}</h2>
+          <p>Total Tasks</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{todo}</span>
-          <span className="stat-label">To Do</span>
+          <h2>{tasks.filter(t => t.status === "TODO").length}</h2>
+          <p>To Do</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{inProgress}</span>
-          <span className="stat-label">In Progress</span>
+          <h2>{tasks.filter(t => t.status === "IN_PROGRESS").length}</h2>
+          <p>In Progress</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{inQA}</span>
-          <span className="stat-label">In QA</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-number">{done}</span>
-          <span className="stat-label">Done</span>
+          <h2>{tasks.filter(t => t.status === "DONE").length}</h2>
+          <p>Done</p>
         </div>
       </div>
 
-      <div className="dash-card">
-        <h3 className="card-title">🛠️ My Tasks</h3>
-        {tasks.length === 0 ? (
+      {/* TASKS TABLE */}
+      <div className="table-card">
+        <h3>🛠️ My Tasks</h3>
+
+        {loading ? (
+          <p style={{ color: "#6b7280", padding: "20px 0" }}>Loading tasks...</p>
+        ) : tasks.length === 0 ? (
           <p style={{ color: "#6b7280", padding: "20px 0" }}>No tasks assigned yet.</p>
         ) : (
-          <table className="dash-table">
+          <table>
             <thead>
               <tr>
                 <th>#</th>
@@ -144,29 +101,39 @@ function DeveloperDashboard() {
                   <td>{task.id}</td>
                   <td>{task.title}</td>
                   <td>
-                    <code className="branch-tag">
-                      {task.git_branch || `feature/task-${task.id}`}
+                    <code style={{ background: "#f1f5f9", padding: "2px 8px", borderRadius: "4px", fontSize: "12px" }}>
+                      {task.git_branch || "no-branch"}
                     </code>
                   </td>
                   <td>
-                    <span className="status-badge" style={priorityColors[task.priority]}>
+                    <span className="status" style={priorityColors[task.priority] || priorityColors.MEDIUM}>
                       {task.priority}
                     </span>
                   </td>
                   <td>
-                    <span className="status-badge" style={statusColors[task.status]}>
-                      {task.status.replace(/_/g, " ")}
+                    <span className="status" style={statusColors[task.status] || statusColors.TODO}>
+                      {task.status?.replace("_", " ")}
                     </span>
                   </td>
                   <td>
-                    {NEXT_STATUS[task.status] && (
+                    {task.status === "TODO" && (
                       <button
-                        className="action-btn approve-btn"
-                        disabled={updating === task.id}
-                        onClick={() => updateStatus(task.id, NEXT_STATUS[task.status])}
+                        onClick={() => updateTaskStatus(task.id, "IN_PROGRESS")}
+                        style={{ padding: "6px 12px", background: "#3b82f6", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
                       >
-                        {updating === task.id ? "..." : NEXT_LABEL[task.status]}
+                        Start
                       </button>
+                    )}
+                    {task.status === "IN_PROGRESS" && (
+                      <button
+                        onClick={() => updateTaskStatus(task.id, "DONE")}
+                        style={{ padding: "6px 12px", background: "#16a34a", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
+                      >
+                        Mark Done
+                      </button>
+                    )}
+                    {task.status === "DONE" && (
+                      <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: "500" }}>✓ Complete</span>
                     )}
                   </td>
                 </tr>
@@ -175,6 +142,7 @@ function DeveloperDashboard() {
           </table>
         )}
       </div>
+
     </div>
   )
 }

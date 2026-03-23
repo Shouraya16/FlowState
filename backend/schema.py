@@ -36,8 +36,12 @@ class RequestStatus(enum.Enum):
 class TaskStatus(enum.Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"
-    READY_FOR_QA = "READY_FOR_QA"   # ← added
     DONE = "DONE"
+    READY_FOR_QA = "READY_FOR_QA"
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    READY_TO_DEPLOY = "READY_TO_DEPLOY"
+    DEPLOYED = "DEPLOYED"
 
 
 class TaskPriority(enum.Enum):
@@ -45,6 +49,10 @@ class TaskPriority(enum.Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+
+# =========================================================
+# PYDANTIC MODELS
+# =========================================================
 
 class FeatureRequestCreate(BaseModel):
     title: str
@@ -64,9 +72,15 @@ class User(Base):
     user_type = Column(Enum(UserType), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    client_profile = relationship("Client", back_populates="user", uselist=False, cascade="all, delete")
-    admin_profile = relationship("Admin", back_populates="user", uselist=False, cascade="all, delete")
-    employee_profile = relationship("Employee", back_populates="user", uselist=False, cascade="all, delete")
+    client_profile = relationship(
+        "Client", back_populates="user", uselist=False, cascade="all, delete"
+    )
+    admin_profile = relationship(
+        "Admin", back_populates="user", uselist=False, cascade="all, delete"
+    )
+    employee_profile = relationship(
+        "Employee", back_populates="user", uselist=False, cascade="all, delete"
+    )
     logs = relationship("AuditLog", back_populates="user")
 
 
@@ -82,7 +96,9 @@ class Client(Base):
     company_name = Column(String(255), nullable=False)
 
     user = relationship("User", back_populates="client_profile")
-    requests = relationship("FeatureRequest", back_populates="client", cascade="all, delete-orphan")
+    requests = relationship(
+        "FeatureRequest", back_populates="client", cascade="all, delete-orphan"
+    )
 
 
 class Admin(Base):
@@ -106,6 +122,7 @@ class Employee(Base):
 
     user = relationship("User", back_populates="employee_profile")
     assigned_tasks = relationship("Task", back_populates="assignee")
+
     manager_profile = relationship("Manager", back_populates="employee", uselist=False)
     developer_profile = relationship("Developer", back_populates="employee", uselist=False)
     tester_profile = relationship("Tester", back_populates="employee", uselist=False)
@@ -199,9 +216,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action_type = Column(String(100), nullable=False)
-    details = Column(JSONB)
+    details = Column(JSONB, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="logs")

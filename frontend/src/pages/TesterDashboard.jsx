@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react"
+import { apiFetch } from "../utils/apiFetch"
 
 const statusColors = {
-  READY_FOR_QA: { bg: "#dbeafe", color: "#1e40af" },
-  DONE: { bg: "#dcfce7", color: "#166534" },
-  IN_PROGRESS: { bg: "#fee2e2", color: "#991b1b" }, // failed = sent back
+  TODO: { bg: "#f3f4f6", color: "#374151" },
+  IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
+  READY_FOR_QA: { bg: "#f3e8ff", color: "#6b21a8" },
+  PASSED: { bg: "#dcfce7", color: "#166534" },
+  FAILED: { bg: "#fee2e2", color: "#991b1b" },
+  READY_TO_DEPLOY: { bg: "#fef9c3", color: "#854d0e" },
 }
 
 const priorityColors = {
@@ -13,117 +17,85 @@ const priorityColors = {
 }
 
 function TesterDashboard() {
+
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [processing, setProcessing] = useState(null)
-  const [notes, setNotes] = useState({})
-
-  const token = localStorage.getItem("token")
 
   useEffect(() => {
-    fetchQATasks()
+    apiFetch("/tasks/qa-tasks")
+      .then(res => res.json())
+      .then(data => {
+        setTasks(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error("Failed to fetch QA tasks:", err)
+        setLoading(false)
+      })
   }, [])
 
-  const fetchQATasks = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/qa/tasks", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error("Failed to fetch QA tasks")
-      const data = await res.json()
-      setTasks(data)
-    } catch (err) {
-      setError("Could not load QA tasks. Make sure you are logged in as a Tester.")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const submitResult = async (taskId, result) => {
-    setProcessing(`${taskId}-${result}`)
-    try {
-      const res = await fetch(`http://localhost:8000/qa/tasks/${taskId}/result`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          result,
-          notes: notes[taskId] || ""
-        })
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        alert(data.detail || "Failed to submit QA result")
-        return
-      }
-
-      // Update status locally
-      const newStatus = result === "pass" ? "DONE" : "IN_PROGRESS"
+  const updateQAResult = async (taskId, result) => {
+    const res = await apiFetch(`/tasks/${taskId}/qa-result?result=${result}`, {
+      method: "PATCH"
+    })
+    if (res.ok) {
       setTasks(prev =>
-        prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t)
+        prev.map(t => t.id === taskId
+          ? { ...t, status: result === "pass" ? "PASSED" : "FAILED" }
+          : t
+        )
       )
-
-      alert(data.message)
-    } catch {
-      alert("Server error. Try again.")
-    } finally {
-      setProcessing(null)
+    } else {
+      alert("Failed to update QA result")
     }
   }
-
-  if (loading) return <div className="dashboard"><p>Loading QA tasks...</p></div>
-  if (error) return <div className="dashboard"><p style={{ color: "red" }}>{error}</p></div>
-
-  const readyCount = tasks.filter(t => t.status === "READY_FOR_QA").length
-  const passedCount = tasks.filter(t => t.status === "DONE").length
-  const failedCount = tasks.filter(t => t.status === "IN_PROGRESS").length
 
   return (
-    <div className="dash-wrapper">
+    <div style={{ padding: "40px 60px" }}>
+
       <div className="dash-header">
         <div>
-          <h1 className="dash-title">Tester Dashboard</h1>
-          <p className="dash-subtitle">Validate tasks and manage the QA pipeline</p>
+          <h1>Tester Dashboard</h1>
+          <p style={{ color: "#6b7280", marginTop: "5px" }}>Validate tasks and manage QA pipeline</p>
         </div>
       </div>
 
-      <div className="stats-row">
+      {/* STATS */}
+      <div className="stats">
         <div className="stat-card">
-          <span className="stat-number">{readyCount}</span>
-          <span className="stat-label">Ready for QA</span>
+          <h2>{tasks.filter(t => t.status === "READY_FOR_QA").length}</h2>
+          <p>Ready for QA</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{passedCount}</span>
-          <span className="stat-label">Passed</span>
+          <h2>{tasks.filter(t => t.status === "PASSED").length}</h2>
+          <p>Passed</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{failedCount}</span>
-          <span className="stat-label">Sent back</span>
+          <h2>{tasks.filter(t => t.status === "FAILED").length}</h2>
+          <p>Failed</p>
         </div>
         <div className="stat-card">
-          <span className="stat-number">{tasks.length}</span>
-          <span className="stat-label">Total</span>
+          <h2>{tasks.length}</h2>
+          <p>Total</p>
         </div>
       </div>
 
-      <div className="dash-card">
-        <h3 className="card-title">🧪 QA Tasks</h3>
-        {tasks.length === 0 ? (
-          <p style={{ color: "#6b7280", padding: "20px 0" }}>No tasks in the QA queue yet.</p>
+      {/* QA TASKS TABLE */}
+      <div className="table-card">
+        <h3>🧪 QA Tasks</h3>
+
+        {loading ? (
+          <p style={{ color: "#6b7280", padding: "20px 0" }}>Loading...</p>
+        ) : tasks.length === 0 ? (
+          <p style={{ color: "#6b7280", padding: "20px 0" }}>No tasks ready for QA yet.</p>
         ) : (
-          <table className="dash-table">
+          <table>
             <thead>
               <tr>
                 <th>#</th>
                 <th>Task</th>
-                <th>Developer</th>
                 <th>Priority</th>
                 <th>Status</th>
-                <th>Notes</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -132,54 +104,38 @@ function TesterDashboard() {
                 <tr key={task.id}>
                   <td>{task.id}</td>
                   <td>{task.title}</td>
-                  <td style={{ fontSize: "12px", color: "#6b7280" }}>
-                    {task.developer_email || "—"}
-                  </td>
                   <td>
-                    <span className="status-badge" style={priorityColors[task.priority]}>
+                    <span className="status" style={priorityColors[task.priority] || priorityColors.MEDIUM}>
                       {task.priority}
                     </span>
                   </td>
                   <td>
-                    <span className="status-badge" style={statusColors[task.status] || {}}>
-                      {task.status.replace(/_/g, " ")}
+                    <span className="status" style={statusColors[task.status] || statusColors.READY_FOR_QA}>
+                      {task.status?.replace(/_/g, " ")}
                     </span>
                   </td>
                   <td>
                     {task.status === "READY_FOR_QA" && (
-                      <input
-                        type="text"
-                        placeholder="Optional notes..."
-                        value={notes[task.id] || ""}
-                        onChange={e => setNotes(prev => ({ ...prev, [task.id]: e.target.value }))}
-                        style={{
-                          padding: "4px 8px",
-                          borderRadius: "6px",
-                          border: "1px solid #ddd",
-                          fontSize: "12px",
-                          width: "140px"
-                        }}
-                      />
-                    )}
-                  </td>
-                  <td>
-                    {task.status === "READY_FOR_QA" && (
-                      <div style={{ display: "flex", gap: "6px" }}>
+                      <div style={{ display: "flex", gap: "8px" }}>
                         <button
-                          className="action-btn approve-btn"
-                          disabled={!!processing}
-                          onClick={() => submitResult(task.id, "pass")}
+                          onClick={() => updateQAResult(task.id, "pass")}
+                          style={{ padding: "6px 12px", background: "#16a34a", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
                         >
-                          {processing === `${task.id}-pass` ? "..." : "Pass ✓"}
+                          Pass ✓
                         </button>
                         <button
-                          className="action-btn reject-btn"
-                          disabled={!!processing}
-                          onClick={() => submitResult(task.id, "fail")}
+                          onClick={() => updateQAResult(task.id, "fail")}
+                          style={{ padding: "6px 12px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
                         >
-                          {processing === `${task.id}-fail` ? "..." : "Fail ✗"}
+                          Fail ✗
                         </button>
                       </div>
+                    )}
+                    {task.status === "PASSED" && (
+                      <span style={{ color: "#16a34a", fontSize: "13px", fontWeight: "500" }}>✓ Passed</span>
+                    )}
+                    {task.status === "FAILED" && (
+                      <span style={{ color: "#ef4444", fontSize: "13px", fontWeight: "500" }}>✗ Failed</span>
                     )}
                   </td>
                 </tr>
@@ -188,6 +144,7 @@ function TesterDashboard() {
           </table>
         )}
       </div>
+
     </div>
   )
 }

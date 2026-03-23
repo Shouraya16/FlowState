@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schema import FeatureRequest, Client, FeatureRequestCreate, RequestStatus, Employee, EmployeeType
+from schema import FeatureRequest, Client, FeatureRequestCreate, RequestStatus, User, UserType, Employee, EmployeeType
 from utils.jwt_handler import decode_token
 
 router = APIRouter(prefix="/requests", tags=["Feature Requests"])
@@ -39,9 +39,22 @@ def submit_request(
 @router.get("")
 def get_requests(
     db: Session = Depends(get_db),
-    token_data=Depends(decode_token)   # ← now requires auth
+    token_data=Depends(decode_token)
 ):
-    requests = db.query(FeatureRequest).all()
+    user_id = token_data["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
+
+    # Clients only see their own requests
+    if user.user_type == UserType.CLIENT:
+        client = db.query(Client).filter(Client.user_id == user_id).first()
+        if not client:
+            return []
+        requests = db.query(FeatureRequest).filter(
+            FeatureRequest.client_id == client.id
+        ).all()
+    else:
+        # Managers, admins, employees see all
+        requests = db.query(FeatureRequest).all()
 
     return [
         {
@@ -60,14 +73,14 @@ def update_status(
     request_id: int,
     status: str,
     db: Session = Depends(get_db),
-    token_data=Depends(decode_token)   # ← now requires auth
+    token_data=Depends(decode_token)
 ):
+    # Only managers/admins can update status
     user_id = token_data["user_id"]
+    user = db.query(User).filter(User.id == user_id).first()
 
-    # Only managers can approve/reject
-    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    if not employee or employee.employee_type != EmployeeType.MANAGER:
-        raise HTTPException(status_code=403, detail="Only managers can update request status")
+    if user.user_type == UserType.CLIENT:
+        raise HTTPException(status_code=403, detail="Clients cannot update request status")
 
     req = db.query(FeatureRequest).filter(FeatureRequest.id == request_id).first()
     if not req:
@@ -79,5 +92,4 @@ def update_status(
         raise HTTPException(status_code=400, detail="Invalid status")
 
     db.commit()
-
-    return {"message": "Status updated", "status": status}
+    return {"message": "Status updated", "new_status": req.status.value}

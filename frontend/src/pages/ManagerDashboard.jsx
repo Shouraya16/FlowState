@@ -1,106 +1,58 @@
 import { useEffect, useState } from "react"
+import { apiFetch } from "../utils/apiFetch"
 
 function ManagerDashboard() {
+
   const [requests, setRequests] = useState([])
+  const [tasks, setTasks] = useState([])
   const [filter, setFilter] = useState("PENDING")
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [taskModal, setTaskModal] = useState(null)  // holds the request to create task from
-  const [taskTitle, setTaskTitle] = useState("")
-  const [taskPriority, setTaskPriority] = useState("MEDIUM")
-  const [creating, setCreating] = useState(false)
-
-  const token = localStorage.getItem("token")
+  const [activeTab, setActiveTab] = useState("requests")
 
   useEffect(() => {
-    fetchRequests()
+    // Fetch feature requests
+    apiFetch("/requests")
+      .then(res => res.json())
+      .then(data => {
+        setRequests(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error("Failed to fetch requests:", err)
+        setLoading(false)
+      })
+
+    // Fetch all tasks
+    apiFetch("/tasks")
+      .then(res => res.json())
+      .then(data => setTasks(data))
+      .catch(err => console.error("Failed to fetch tasks:", err))
   }, [])
 
-  const fetchRequests = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/requests", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error("Failed to fetch")
-      const data = await res.json()
-      setRequests(data)
-    } catch {
-      setError("Could not load requests.")
-    } finally {
-      setLoading(false)
-    }
-  }
+  const pending = requests.filter(r => r.status === "PENDING")
+  const displayed = filter === "ALL" ? requests : requests.filter(r => r.status === "PENDING")
 
   const updateStatus = async (id, status) => {
-    const res = await fetch(
-      `http://localhost:8000/requests/${id}/status?status=${status}`,
-      {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    )
-    if (!res.ok) {
-      const data = await res.json()
-      alert(data.detail || "Failed to update status")
-      return
+    const res = await apiFetch(`/requests/${id}/status?status=${status}`, {
+      method: "PATCH"
+    })
+
+    if (res.ok) {
+      setRequests(prev =>
+        prev.map(r => r.id === id ? { ...r, status } : r)
+      )
+    } else {
+      alert("Failed to update status")
     }
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
-  }
-
-  const createTask = async () => {
-    if (!taskTitle.trim()) {
-      alert("Please enter a task title")
-      return
-    }
-    setCreating(true)
-    try {
-      const res = await fetch("http://localhost:8000/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          request_id: taskModal.id,
-          title: taskTitle,
-          priority: taskPriority
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        alert(data.detail || "Failed to create task")
-        return
-      }
-      alert(`Task created and auto-assigned! Task ID: ${data.task_id}`)
-      setTaskModal(null)
-      setTaskTitle("")
-      setTaskPriority("MEDIUM")
-      // Refresh requests to show updated status
-      fetchRequests()
-    } catch {
-      alert("Server error. Try again.")
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  if (loading) return <div className="dashboard"><p>Loading...</p></div>
-  if (error) return <div className="dashboard"><p style={{ color: "red" }}>{error}</p></div>
-
-  const pending = requests.filter(r => r.status === "PENDING")
-  const displayed = filter === "ALL" ? requests : pending
-
-  const statusClass = (s) => {
-    const map = { PENDING: "pending", APPROVED: "approved", REJECTED: "rejected", IN_PROGRESS: "inprogress" }
-    return map[s] || ""
   }
 
   return (
     <div className="dashboard">
+
       <div className="dash-header">
         <div>
           <h1>Manager Dashboard</h1>
-          <p style={{ color: "#6b7280" }}>Review requests and convert them to tasks</p>
+          <p>Review requests and oversee team tasks</p>
         </div>
       </div>
 
@@ -108,7 +60,7 @@ function ManagerDashboard() {
       <div className="stats">
         <div
           className={`stat-card ${filter === "PENDING" ? "active" : ""}`}
-          onClick={() => setFilter("PENDING")}
+          onClick={() => { setFilter("PENDING"); setActiveTab("requests") }}
           style={{ cursor: "pointer" }}
         >
           <h2>{pending.length}</h2>
@@ -116,164 +68,141 @@ function ManagerDashboard() {
         </div>
         <div
           className={`stat-card ${filter === "ALL" ? "active" : ""}`}
-          onClick={() => setFilter("ALL")}
+          onClick={() => { setFilter("ALL"); setActiveTab("requests") }}
           style={{ cursor: "pointer" }}
         >
           <h2>{requests.length}</h2>
           <p>Total Requests</p>
         </div>
-        <div className="stat-card">
-          <h2>{requests.filter(r => r.status === "APPROVED").length}</h2>
-          <p>Approved</p>
-        </div>
-        <div className="stat-card">
-          <h2>{requests.filter(r => r.status === "IN_PROGRESS").length}</h2>
-          <p>In Progress</p>
+        <div
+          className="stat-card"
+          onClick={() => setActiveTab("tasks")}
+          style={{ cursor: "pointer" }}
+        >
+          <h2>{tasks.length}</h2>
+          <p>Active Tasks</p>
         </div>
       </div>
 
-      {/* TABLE */}
-      <div className="table-card">
-        <h3>{filter === "ALL" ? "All Requests" : "Pending Requests"}</h3>
+      {/* TAB SWITCHER */}
+      <div style={{ display: "flex", gap: "12px", marginBottom: "20px" }}>
+        <button
+          className={activeTab === "requests" ? "primary-btn" : ""}
+          onClick={() => setActiveTab("requests")}
+          style={activeTab !== "requests" ? { padding: "10px 18px", borderRadius: "8px", border: "1px solid #ddd", background: "white", cursor: "pointer" } : {}}
+        >
+          Feature Requests
+        </button>
+        <button
+          className={activeTab === "tasks" ? "primary-btn" : ""}
+          onClick={() => setActiveTab("tasks")}
+          style={activeTab !== "tasks" ? { padding: "10px 18px", borderRadius: "8px", border: "1px solid #ddd", background: "white", cursor: "pointer" } : {}}
+        >
+          All Tasks
+        </button>
+      </div>
 
-        {displayed.length === 0 ? (
-          <p style={{ color: "#6b7280", padding: "16px 0" }}>No requests to show.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Title</th>
-                <th>Description</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayed.map(r => (
-                <tr key={r.id}>
-                  <td>{r.id}</td>
-                  <td>{r.title}</td>
-                  <td style={{ fontSize: "13px", color: "#6b7280", maxWidth: "200px" }}>
-                    {r.description}
-                  </td>
-                  <td>
-                    <span className={`status ${statusClass(r.status)}`}>
-                      {r.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      {/* REQUESTS TABLE */}
+      {activeTab === "requests" && (
+        <div className="table-card">
+          <h3>{filter === "ALL" ? "All Requests" : "Pending Requests"}</h3>
+
+          {loading ? (
+            <p style={{ color: "#6b7280", padding: "20px 0" }}>Loading...</p>
+          ) : displayed.length === 0 ? (
+            <p style={{ color: "#6b7280", padding: "20px 0" }}>No requests found.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Title</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayed.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td>{r.title}</td>
+                    <td>{r.description}</td>
+                    <td>
+                      <span className={`status ${r.status.toLowerCase().replace("_", "")}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td>
                       {r.status === "PENDING" && (
-                        <>
+                        <div style={{ display: "flex", gap: "8px" }}>
                           <button
-                            className="approve-btn action-btn"
                             onClick={() => updateStatus(r.id, "APPROVED")}
+                            style={{ padding: "6px 14px", background: "#16a34a", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
                           >
                             Approve
                           </button>
                           <button
-                            className="reject-btn action-btn"
                             onClick={() => updateStatus(r.id, "REJECTED")}
+                            style={{ padding: "6px 14px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
                           >
                             Reject
                           </button>
-                        </>
+                        </div>
                       )}
-
-                      {r.status === "APPROVED" && (
-                        <button
-                          className="action-btn"
-                          style={{ background: "#5b5bf7", color: "white", border: "none" }}
-                          onClick={() => {
-                            setTaskModal(r)
-                            setTaskTitle(r.title)
-                          }}
-                        >
-                          Create Task →
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* TASK CREATION MODAL */}
-      {taskModal && (
-        <div style={{
-          position: "fixed", inset: 0,
-          background: "rgba(0,0,0,0.4)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: "white", borderRadius: "14px",
-            padding: "32px", width: "420px",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.15)"
-          }}>
-            <h3 style={{ marginTop: 0 }}>Create Task from Request</h3>
-            <p style={{ color: "#6b7280", fontSize: "13px" }}>
-              Request: <strong>{taskModal.title}</strong>
-            </p>
-
-            <label style={{ fontSize: "13px", fontWeight: 500 }}>Task Title</label>
-            <input
-              type="text"
-              value={taskTitle}
-              onChange={e => setTaskTitle(e.target.value)}
-              style={{
-                width: "100%", padding: "10px", marginTop: "6px", marginBottom: "14px",
-                borderRadius: "8px", border: "1px solid #ddd", boxSizing: "border-box"
-              }}
-            />
-
-            <label style={{ fontSize: "13px", fontWeight: 500 }}>Priority</label>
-            <select
-              value={taskPriority}
-              onChange={e => setTaskPriority(e.target.value)}
-              style={{
-                width: "100%", padding: "10px", marginTop: "6px", marginBottom: "20px",
-                borderRadius: "8px", border: "1px solid #ddd"
-              }}
-            >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-            </select>
-
-            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px" }}>
-              The task will be automatically assigned to the developer with the lowest workload.
-            </p>
-
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setTaskModal(null)}
-                style={{
-                  padding: "10px 20px", borderRadius: "8px",
-                  border: "1px solid #ddd", background: "white", cursor: "pointer"
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createTask}
-                disabled={creating}
-                style={{
-                  padding: "10px 20px", borderRadius: "8px",
-                  background: "#5b5bf7", color: "white",
-                  border: "none", cursor: "pointer", fontWeight: 500
-                }}
-              >
-                {creating ? "Creating..." : "Create & Assign"}
-              </button>
-            </div>
-          </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
+
+      {/* TASKS TABLE */}
+      {activeTab === "tasks" && (
+        <div className="table-card">
+          <h3>All Tasks</h3>
+          {tasks.length === 0 ? (
+            <p style={{ color: "#6b7280", padding: "20px 0" }}>No tasks yet. Approve a request to create tasks.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Title</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Assigned To</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.id}</td>
+                    <td>{t.title}</td>
+                    <td>
+                      <span className={`status`} style={{
+                        background: t.priority === "HIGH" ? "#fee2e2" : t.priority === "MEDIUM" ? "#fef3c7" : "#dcfce7",
+                        color: t.priority === "HIGH" ? "#991b1b" : t.priority === "MEDIUM" ? "#92400e" : "#166534"
+                      }}>
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status ${t.status.toLowerCase().replace("_", "")}`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td>{t.assigned_to || "Unassigned"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
     </div>
   )
 }
