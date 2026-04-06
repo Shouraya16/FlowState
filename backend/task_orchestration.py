@@ -1,7 +1,7 @@
 from data_management import DatabaseContext
 
 class WorkflowEngine:
-    def _init_(self):
+    def __init__(self):
         # Initialize connection to the Data Component
         self.db = DatabaseContext()
 

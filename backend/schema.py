@@ -35,6 +35,8 @@ class RequestStatus(enum.Enum):
 
 class TaskStatus(enum.Enum):
     TODO = "TODO"
+    DESIGN_IN_PROGRESS = "DESIGN_IN_PROGRESS"
+    DESIGN_COMPLETE = "DESIGN_COMPLETE"
     IN_PROGRESS = "IN_PROGRESS"
     DONE = "DONE"
     READY_FOR_QA = "READY_FOR_QA"

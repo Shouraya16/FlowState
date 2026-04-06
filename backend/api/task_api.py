@@ -5,21 +5,12 @@ from pydantic import BaseModel
 from database import get_db
 from schema import (
     Task, TaskStatus, TaskPriority,
-    Employee, Developer, FeatureRequest, RequestStatus, EmployeeType
+    Employee, EmployeeType,
+    FeatureRequest, RequestStatus
 )
 from utils.jwt_handler import decode_token
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
-
-
-# -------------------------
-# REQUEST MODELS
-# -------------------------
-
-class TaskCreate(BaseModel):
-    title: str
-    request_id: int
-    priority: str = "MEDIUM"
 
 
 class AssetUpload(BaseModel):
@@ -27,84 +18,38 @@ class AssetUpload(BaseModel):
 
 
 # -------------------------
-# SMART ASSIGN HELPER
+# HELPERS
 # -------------------------
 
-def get_best_developer(db: Session):
-    """Return the developer Employee with lowest active ticket count."""
-    developers = (
+def get_best_employee_of_type(db: Session, emp_type: EmployeeType):
+    """Return the Employee of given type with the lowest active task count."""
+    employees = (
         db.query(Employee)
-        .filter(Employee.employee_type == EmployeeType.DEVELOPER)
+        .filter(Employee.employee_type == emp_type)
         .all()
     )
-    if not developers:
+    if not employees:
         return None
 
     best = None
     lowest = float("inf")
 
-    for emp in developers:
-        dev_profile = emp.developer_profile
-        count = dev_profile.active_ticket_count if dev_profile else 0
+    active_statuses = [
+        TaskStatus.TODO,
+        TaskStatus.DESIGN_IN_PROGRESS,
+        TaskStatus.IN_PROGRESS,
+    ]
+
+    for emp in employees:
+        count = db.query(Task).filter(
+            Task.assigned_to == emp.id,
+            Task.status.in_(active_statuses)
+        ).count()
         if count < lowest:
             lowest = count
             best = emp
 
     return best
-
-
-# -------------------------
-# CREATE TASK (from approved request)
-# -------------------------
-
-@router.post("")
-def create_task(
-    data: TaskCreate,
-    db: Session = Depends(get_db),
-    token_data=Depends(decode_token)
-):
-    # Validate request exists and is approved
-    req = db.query(FeatureRequest).filter(FeatureRequest.id == data.request_id).first()
-    if not req:
-        raise HTTPException(status_code=404, detail="Feature request not found")
-    if req.status != RequestStatus.APPROVED:
-        raise HTTPException(status_code=400, detail="Request must be APPROVED before creating tasks")
-
-    # Smart assign
-    assignee = get_best_developer(db)
-
-    try:
-        priority_enum = TaskPriority(data.priority.upper())
-    except Exception:
-        priority_enum = TaskPriority.MEDIUM
-
-    task = Task(
-        request_id=data.request_id,
-        title=data.title,
-        priority=priority_enum,
-        status=TaskStatus.TODO,
-        assigned_to=assignee.id if assignee else None,
-        git_branch=f"feature/{data.title.lower().replace(' ', '-')}"
-    )
-
-    db.add(task)
-
-    # Increment active ticket count
-    if assignee and assignee.developer_profile:
-        assignee.developer_profile.active_ticket_count += 1
-
-    # Move request to IN_PROGRESS
-    req.status = RequestStatus.IN_PROGRESS
-
-    db.commit()
-    db.refresh(task)
-
-    return {
-        "message": "Task created and assigned",
-        "task_id": task.id,
-        "assigned_to": assignee.id if assignee else None,
-        "git_branch": task.git_branch
-    }
 
 
 # -------------------------
@@ -121,7 +66,7 @@ def get_all_tasks(
 
 
 # -------------------------
-# GET MY TASKS (developer / designer)
+# GET MY TASKS (designer / developer)
 # -------------------------
 
 @router.get("/my-tasks")
@@ -130,7 +75,6 @@ def get_my_tasks(
     token_data=Depends(decode_token)
 ):
     user_id = token_data["user_id"]
-
     employee = db.query(Employee).filter(Employee.user_id == user_id).first()
     if not employee:
         raise HTTPException(status_code=403, detail="Not an employee account")
@@ -149,13 +93,18 @@ def get_qa_tasks(
     token_data=Depends(decode_token)
 ):
     tasks = db.query(Task).filter(
-        Task.status.in_([TaskStatus.READY_FOR_QA, TaskStatus.PASSED, TaskStatus.FAILED])
+        Task.status.in_([
+            TaskStatus.READY_FOR_QA,
+            TaskStatus.PASSED,
+            TaskStatus.FAILED
+        ])
     ).all()
     return [_format_task(t) for t in tasks]
 
 
 # -------------------------
-# UPDATE TASK STATUS (developer)
+# UPDATE TASK STATUS
+# handles designer → developer handoff automatically
 # -------------------------
 
 @router.patch("/{task_id}/status")
@@ -169,37 +118,76 @@ def update_task_status(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Map status string to enum — support extended statuses
-    status_map = {
-        "TODO": TaskStatus.TODO,
-        "IN_PROGRESS": TaskStatus.IN_PROGRESS,
-        "DONE": TaskStatus.DONE,
-        "READY_FOR_QA": TaskStatus.READY_FOR_QA,
-        "READY_TO_DEPLOY": TaskStatus.READY_TO_DEPLOY,
-    }
+    user_id = token_data["user_id"]
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
 
-    new_status = status_map.get(status.upper())
-    if not new_status:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    status_upper = status.upper()
 
-    # When developer marks DONE, auto-move to READY_FOR_QA
-    if new_status == TaskStatus.DONE:
+    # -------------------------------------------------------
+    # DESIGNER marks DESIGN_COMPLETE
+    # → reassign to best Developer, status becomes IN_PROGRESS
+    # -------------------------------------------------------
+    if status_upper == "DESIGN_COMPLETE":
+
+        if employee and employee.employee_type != EmployeeType.DESIGNER:
+            raise HTTPException(status_code=403, detail="Only designers can mark design complete")
+
+        developer = get_best_employee_of_type(db, EmployeeType.DEVELOPER)
+
+        task.status = TaskStatus.IN_PROGRESS
+        task.assigned_to = developer.id if developer else task.assigned_to
+
+        # increment developer ticket count
+        if developer and developer.developer_profile:
+            developer.developer_profile.active_ticket_count += 1
+
+        db.commit()
+        return {
+            "message": "Design complete. Task reassigned to developer.",
+            "new_status": task.status.value,
+            "assigned_to_developer": developer.id if developer else None
+        }
+
+    # -------------------------------------------------------
+    # DEVELOPER marks DONE
+    # → auto-advance to READY_FOR_QA, decrement ticket count
+    # -------------------------------------------------------
+    if status_upper == "DONE":
+
         task.status = TaskStatus.READY_FOR_QA
-    else:
-        task.status = new_status
 
-    # Decrement ticket count when task is finished
-    if new_status in [TaskStatus.DONE, TaskStatus.READY_FOR_QA]:
         if task.assignee and task.assignee.developer_profile:
             count = task.assignee.developer_profile.active_ticket_count
             task.assignee.developer_profile.active_ticket_count = max(0, count - 1)
 
+        db.commit()
+        return {
+            "message": "Task marked done. Moved to QA.",
+            "new_status": task.status.value
+        }
+
+    # -------------------------------------------------------
+    # GENERAL STATUS UPDATE (start task etc.)
+    # -------------------------------------------------------
+    status_map = {
+        "TODO": TaskStatus.TODO,
+        "DESIGN_IN_PROGRESS": TaskStatus.DESIGN_IN_PROGRESS,
+        "IN_PROGRESS": TaskStatus.IN_PROGRESS,
+        "READY_FOR_QA": TaskStatus.READY_FOR_QA,
+        "READY_TO_DEPLOY": TaskStatus.READY_TO_DEPLOY,
+    }
+
+    new_status = status_map.get(status_upper)
+    if not new_status:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+    task.status = new_status
     db.commit()
-    return {"message": "Task status updated", "new_status": task.status.value}
+    return {"message": "Status updated", "new_status": task.status.value}
 
 
 # -------------------------
-# QA RESULT (tester: pass or fail)
+# QA RESULT (tester)
 # -------------------------
 
 @router.patch("/{task_id}/qa-result")
@@ -217,8 +205,9 @@ def qa_result(
         task.status = TaskStatus.READY_TO_DEPLOY
         message = "Task passed QA and is ready to deploy"
     elif result.lower() == "fail":
-        task.status = TaskStatus.IN_PROGRESS  # Revert to dev
-        message = "Task failed QA and reverted to In Progress"
+        # revert to developer
+        task.status = TaskStatus.IN_PROGRESS
+        message = "Task failed QA. Reverted to developer."
     else:
         raise HTTPException(status_code=400, detail="Result must be 'pass' or 'fail'")
 
@@ -241,11 +230,8 @@ def upload_asset(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Store asset URL in git_branch field temporarily
-    # In production, create a separate Asset model
     task.git_branch = data.asset_url
     db.commit()
-
     return {"message": "Asset URL saved", "asset_url": data.asset_url}
 
 

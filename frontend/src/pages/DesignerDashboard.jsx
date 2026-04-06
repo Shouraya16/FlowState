@@ -2,16 +2,17 @@ import { useEffect, useState } from "react"
 import { apiFetch } from "../utils/apiFetch"
 
 const statusColors = {
-  TODO: { bg: "#f3f4f6", color: "#374151" },
-  IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
-  DONE: { bg: "#dcfce7", color: "#166534" },
-  COMPLETED: { bg: "#dcfce7", color: "#166534" },
+  TODO:               { bg: "#f3f4f6", color: "#374151" },
+  DESIGN_IN_PROGRESS: { bg: "#fce7f3", color: "#9d174d" },
+  DESIGN_COMPLETE:    { bg: "#f3e8ff", color: "#6b21a8" },
+  IN_PROGRESS:        { bg: "#dbeafe", color: "#1e40af" },
+  DONE:               { bg: "#dcfce7", color: "#166534" },
 }
 
 const priorityColors = {
-  HIGH: { bg: "#fee2e2", color: "#991b1b" },
+  HIGH:   { bg: "#fee2e2", color: "#991b1b" },
   MEDIUM: { bg: "#fef9c3", color: "#854d0e" },
-  LOW: { bg: "#dcfce7", color: "#166534" },
+  LOW:    { bg: "#dcfce7", color: "#166534" },
 }
 
 function DesignerDashboard() {
@@ -28,22 +29,20 @@ function DesignerDashboard() {
         setTasks(Array.isArray(data) ? data : [])
         setLoading(false)
       })
-      .catch(err => {
-        console.error("Failed to fetch tasks:", err)
-        setLoading(false)
-      })
+      .catch(() => setLoading(false))
   }, [])
 
-  const markComplete = async (taskId) => {
-    const res = await apiFetch(`/tasks/${taskId}/status?status=DONE`, {
+  const markDesignComplete = async (taskId) => {
+    const res = await apiFetch(`/tasks/${taskId}/status?status=DESIGN_COMPLETE`, {
       method: "PATCH"
     })
     if (res.ok) {
-      setTasks(prev =>
-        prev.map(t => t.id === taskId ? { ...t, status: "DONE" } : t)
-      )
+      const data = await res.json()
+      // Remove this task from designer's view since it's now assigned to a developer
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+      alert(`Design complete! Task reassigned to Developer #${data.assigned_to_developer ?? "—"}.`)
     } else {
-      alert("Failed to update task")
+      alert("Failed to mark design complete")
     }
   }
 
@@ -61,7 +60,7 @@ function DesignerDashboard() {
       setAssetUrl("")
       setUploadingFor(null)
     } else {
-      alert("Failed to save asset. Make sure the endpoint exists.")
+      alert("Failed to save asset URL")
     }
   }
 
@@ -71,7 +70,9 @@ function DesignerDashboard() {
       <div className="dash-header">
         <div>
           <h1>Designer Dashboard</h1>
-          <p style={{ color: "#6b7280", marginTop: "5px" }}>Manage your design tasks and asset uploads</p>
+          <p style={{ color: "#6b7280", marginTop: "5px" }}>
+            Complete design tasks and hand off to development
+          </p>
         </div>
       </div>
 
@@ -79,15 +80,11 @@ function DesignerDashboard() {
       <div className="stats">
         <div className="stat-card">
           <h2>{tasks.length}</h2>
-          <p>Total Tasks</p>
+          <p>My Tasks</p>
         </div>
         <div className="stat-card">
-          <h2>{tasks.filter(t => t.status === "IN_PROGRESS").length}</h2>
+          <h2>{tasks.filter(t => t.status === "DESIGN_IN_PROGRESS").length}</h2>
           <p>In Progress</p>
-        </div>
-        <div className="stat-card">
-          <h2>{tasks.filter(t => t.status === "DONE" || t.status === "COMPLETED").length}</h2>
-          <p>Completed</p>
         </div>
         <div className="stat-card">
           <h2>{tasks.filter(t => t.status === "TODO").length}</h2>
@@ -95,14 +92,22 @@ function DesignerDashboard() {
         </div>
       </div>
 
-      {/* DESIGN TASKS TABLE */}
+      {/* WORKFLOW HINT */}
+      <div style={{
+        background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px",
+        padding: "12px 16px", marginBottom: "24px", fontSize: "13px", color: "#166534"
+      }}>
+        <strong>Workflow:</strong> Complete your design work → click <strong>Mark Design Complete</strong> → task automatically reassigns to a Developer.
+      </div>
+
+      {/* TASKS TABLE */}
       <div className="table-card">
         <h3>🎨 My Design Tasks</h3>
 
         {loading ? (
           <p style={{ color: "#6b7280", padding: "20px 0" }}>Loading tasks...</p>
         ) : tasks.length === 0 ? (
-          <p style={{ color: "#6b7280", padding: "20px 0" }}>No design tasks assigned yet.</p>
+          <p style={{ color: "#6b7280", padding: "20px 0" }}>No design tasks assigned yet. They'll appear here when a manager approves a request.</p>
         ) : (
           <table>
             <thead>
@@ -127,22 +132,32 @@ function DesignerDashboard() {
                     </td>
                     <td>
                       <span className="status" style={statusColors[task.status] || statusColors.TODO}>
-                        {task.status?.replace("_", " ")}
+                        {task.status?.replace(/_/g, " ")}
                       </span>
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        {(task.status === "TODO" || task.status === "IN_PROGRESS") && (
+
+                        {/* Main action — complete design and hand off to developer */}
+                        {(task.status === "TODO" || task.status === "DESIGN_IN_PROGRESS") && (
                           <button
-                            onClick={() => markComplete(task.id)}
-                            style={{ padding: "6px 12px", background: "#16a34a", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
+                            onClick={() => markDesignComplete(task.id)}
+                            style={{
+                              padding: "6px 14px", background: "#7c3aed", color: "white",
+                              border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px"
+                            }}
                           >
-                            Mark Complete
+                            ✓ Mark Design Complete
                           </button>
                         )}
+
+                        {/* Asset upload toggle */}
                         <button
                           onClick={() => setUploadingFor(uploadingFor === task.id ? null : task.id)}
-                          style={{ padding: "6px 12px", background: "#5b5bf7", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
+                          style={{
+                            padding: "6px 12px", background: "#5b5bf7", color: "white",
+                            border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px"
+                          }}
                         >
                           {uploadingFor === task.id ? "Cancel" : "Upload Asset"}
                         </button>
@@ -150,7 +165,7 @@ function DesignerDashboard() {
                     </td>
                   </tr>
 
-                  {/* ASSET UPLOAD ROW */}
+                  {/* ASSET UPLOAD INLINE ROW */}
                   {uploadingFor === task.id && (
                     <tr key={`asset-${task.id}`}>
                       <td colSpan="5" style={{ background: "#f8fafc", padding: "12px 16px" }}>
@@ -160,11 +175,17 @@ function DesignerDashboard() {
                             placeholder="Paste Figma link or asset URL..."
                             value={assetUrl}
                             onChange={e => setAssetUrl(e.target.value)}
-                            style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "13px" }}
+                            style={{
+                              flex: 1, padding: "8px 12px", borderRadius: "8px",
+                              border: "1px solid #ddd", fontSize: "13px"
+                            }}
                           />
                           <button
                             onClick={() => uploadAsset(task.id)}
-                            style={{ padding: "8px 16px", background: "#5b5bf7", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}
+                            style={{
+                              padding: "8px 16px", background: "#5b5bf7", color: "white",
+                              border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px"
+                            }}
                           >
                             Save
                           </button>
