@@ -216,6 +216,57 @@ def qa_result(
 
 
 # -------------------------
+# SAVE GIT LINK (developer)
+# -------------------------
+
+class GitLinkUpdate(BaseModel):
+    git_link: str
+
+@router.patch("/{task_id}/git-link")
+def update_git_link(
+    task_id: int,
+    data: GitLinkUpdate,
+    db: Session = Depends(get_db),
+    token_data=Depends(decode_token)
+):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task.git_branch = data.git_link
+    db.commit()
+    return {"message": "GitHub link saved", "git_branch": task.git_branch}
+
+
+# -------------------------
+# SUBMIT FOR QA (developer)
+# -------------------------
+
+@router.patch("/{task_id}/submit-for-qa")
+def submit_for_qa(
+    task_id: int,
+    db: Session = Depends(get_db),
+    token_data=Depends(decode_token)
+):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if not task.git_branch:
+        raise HTTPException(status_code=400, detail="Please save a GitHub link before submitting for QA")
+
+    task.status = TaskStatus.READY_FOR_QA
+
+    # Decrement developer's active ticket count
+    if task.assignee and task.assignee.developer_profile:
+        count = task.assignee.developer_profile.active_ticket_count
+        task.assignee.developer_profile.active_ticket_count = max(0, count - 1)
+
+    db.commit()
+    return {"message": "Task submitted for QA", "new_status": task.status.value}
+
+
+# -------------------------
 # UPLOAD ASSET (designer)
 # -------------------------
 

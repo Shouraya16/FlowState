@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import DataError
 
 from database import get_db
 from schema import (
@@ -14,6 +15,10 @@ router = APIRouter(prefix="/requests", tags=["Feature Requests"])
 
 # -------------------------
 # HELPER — best designer by active task count
+# FIX: wrapped the .count() in a try/except so that if
+# DESIGN_IN_PROGRESS doesn't exist in the DB enum yet
+# (migration not run), it falls back to counting only TODO tasks
+# instead of crashing the whole request with a 500.
 # -------------------------
 
 def get_best_designer(db: Session):
@@ -29,10 +34,21 @@ def get_best_designer(db: Session):
     lowest = float("inf")
 
     for emp in designers:
-        count = db.query(Task).filter(
-            Task.assigned_to == emp.id,
-            Task.status.in_([TaskStatus.TODO, TaskStatus.DESIGN_IN_PROGRESS])
-        ).count()
+        try:
+            # Primary query — uses both statuses (works after migration)
+            count = db.query(Task).filter(
+                Task.assigned_to == emp.id,
+                Task.status.in_([TaskStatus.TODO, TaskStatus.DESIGN_IN_PROGRESS])
+            ).count()
+        except DataError:
+            # Fallback — DESIGN_IN_PROGRESS not in DB yet (migration pending)
+            # Roll back the failed query so the session stays usable
+            db.rollback()
+            count = db.query(Task).filter(
+                Task.assigned_to == emp.id,
+                Task.status == TaskStatus.TODO
+            ).count()
+
         if count < lowest:
             lowest = count
             best = emp
