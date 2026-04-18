@@ -1,14 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from pydantic import BaseModel
 
 from database import get_db
-from schema import (
-    Task, TaskStatus, TaskPriority,
-    Employee, EmployeeType,
-    FeatureRequest, RequestStatus
-)
+from schema import Employee, EmployeeType
 from utils.jwt_handler import decode_token
+from utils.audit import log_action
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -17,12 +15,15 @@ class AssetUpload(BaseModel):
     asset_url: str
 
 
-# -------------------------
-# HELPERS
-# -------------------------
+class GitLinkUpdate(BaseModel):
+    git_link: str
 
-def get_best_employee_of_type(db: Session, emp_type: EmployeeType):
-    """Return the Employee of given type with the lowest active task count."""
+
+# -------------------------------------------------------
+# HELPER — best employee of type by raw task count
+# -------------------------------------------------------
+
+def get_best_employee_of_type(db: Session, emp_type):
     employees = (
         db.query(Employee)
         .filter(Employee.employee_type == emp_type)
@@ -34,17 +35,12 @@ def get_best_employee_of_type(db: Session, emp_type: EmployeeType):
     best = None
     lowest = float("inf")
 
-    active_statuses = [
-        TaskStatus.TODO,
-        TaskStatus.DESIGN_IN_PROGRESS,
-        TaskStatus.IN_PROGRESS,
-    ]
-
     for emp in employees:
-        count = db.query(Task).filter(
-            Task.assigned_to == emp.id,
-            Task.status.in_(active_statuses)
-        ).count()
+        result = db.execute(
+            text("SELECT COUNT(*) FROM tasks WHERE assigned_to = :eid"),
+            {"eid": emp.id}
+        )
+        count = result.scalar() or 0
         if count < lowest:
             lowest = count
             best = emp
@@ -52,22 +48,37 @@ def get_best_employee_of_type(db: Session, emp_type: EmployeeType):
     return best
 
 
-# -------------------------
-# GET ALL TASKS
-# -------------------------
+def _row_to_dict(r):
+    return {
+        "id": r[0],
+        "title": r[1],
+        "status": r[2],
+        "priority": r[3],
+        "git_branch": r[4],
+        "request_id": r[5],
+        "assigned_to": r[6],
+    }
+
+
+# -------------------------------------------------------
+# GET /tasks — all tasks
+# -------------------------------------------------------
 
 @router.get("")
 def get_all_tasks(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    tasks = db.query(Task).all()
-    return [_format_task(t) for t in tasks]
+    rows = db.execute(text(
+        "SELECT id, title, status, priority, git_branch, request_id, assigned_to "
+        "FROM tasks ORDER BY id DESC"
+    )).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
-# -------------------------
-# GET MY TASKS (designer / developer)
-# -------------------------
+# -------------------------------------------------------
+# GET /tasks/my-tasks
+# -------------------------------------------------------
 
 @router.get("/my-tasks")
 def get_my_tasks(
@@ -79,33 +90,33 @@ def get_my_tasks(
     if not employee:
         raise HTTPException(status_code=403, detail="Not an employee account")
 
-    tasks = db.query(Task).filter(Task.assigned_to == employee.id).all()
-    return [_format_task(t) for t in tasks]
+    rows = db.execute(
+        text("SELECT id, title, status, priority, git_branch, request_id, assigned_to "
+             "FROM tasks WHERE assigned_to = :eid ORDER BY id DESC"),
+        {"eid": employee.id}
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
-# -------------------------
-# GET QA TASKS (tester)
-# -------------------------
+# -------------------------------------------------------
+# GET /tasks/qa-tasks
+# -------------------------------------------------------
 
 @router.get("/qa-tasks")
 def get_qa_tasks(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    tasks = db.query(Task).filter(
-        Task.status.in_([
-            TaskStatus.READY_FOR_QA,
-            TaskStatus.PASSED,
-            TaskStatus.FAILED
-        ])
-    ).all()
-    return [_format_task(t) for t in tasks]
+    rows = db.execute(text(
+        "SELECT id, title, status, priority, git_branch, request_id, assigned_to "
+        "FROM tasks WHERE status IN ('READY_FOR_QA', 'PASSED', 'FAILED') ORDER BY id DESC"
+    )).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
-# -------------------------
-# UPDATE TASK STATUS
-# handles designer → developer handoff automatically
-# -------------------------
+# -------------------------------------------------------
+# PATCH /tasks/{id}/status
+# -------------------------------------------------------
 
 @router.patch("/{task_id}/status")
 def update_task_status(
@@ -114,113 +125,99 @@ def update_task_status(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
+    user_id = token_data["user_id"]
+
+    row = db.execute(
+        text("SELECT id, title, status, assigned_to FROM tasks WHERE id = :tid"),
+        {"tid": task_id}
+    ).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    user_id = token_data["user_id"]
-    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+    status_upper = status.strip().upper()
 
-    status_upper = status.upper()
-
-    # -------------------------------------------------------
-    # DESIGNER marks DESIGN_COMPLETE
-    # → reassign to best Developer, status becomes IN_PROGRESS
-    # -------------------------------------------------------
+    # ── DESIGN_COMPLETE → reassign to developer ──────────
     if status_upper == "DESIGN_COMPLETE":
-
-        if employee and employee.employee_type != EmployeeType.DESIGNER:
-            raise HTTPException(status_code=403, detail="Only designers can mark design complete")
-
         developer = get_best_employee_of_type(db, EmployeeType.DEVELOPER)
+        dev_id = developer.id if developer else row[3]
 
-        task.status = TaskStatus.IN_PROGRESS
-        task.assigned_to = developer.id if developer else task.assigned_to
-
-        # increment developer ticket count
-        if developer and developer.developer_profile:
-            developer.developer_profile.active_ticket_count += 1
-
+        db.execute(text(
+            "UPDATE tasks SET status = 'IN_PROGRESS', assigned_to = :dev_id WHERE id = :tid"
+        ), {"dev_id": dev_id, "tid": task_id})
         db.commit()
+
+        log_action(db, user_id, "DESIGN_COMPLETE", {
+            "task_id": task_id,
+            "title": row[1],
+            "reassigned_to_developer": dev_id
+        })
+
+        if developer:
+            log_action(db, dev_id, "TASK_ASSIGNED", {
+                "task_id": task_id,
+                "title": row[1],
+                "phase": "DEVELOPMENT"
+            })
+
         return {
             "message": "Design complete. Task reassigned to developer.",
-            "new_status": task.status.value,
-            "assigned_to_developer": developer.id if developer else None
+            "new_status": "IN_PROGRESS",
+            "assigned_to_developer": dev_id
         }
 
-    # -------------------------------------------------------
-    # DEVELOPER marks DONE
-    # → auto-advance to READY_FOR_QA, decrement ticket count
-    # -------------------------------------------------------
-    if status_upper == "DONE":
-
-        task.status = TaskStatus.READY_FOR_QA
-
-        if task.assignee and task.assignee.developer_profile:
-            count = task.assignee.developer_profile.active_ticket_count
-            task.assignee.developer_profile.active_ticket_count = max(0, count - 1)
-
+    # ── IN_PROGRESS (start) ──────────────────────────────
+    if status_upper == "IN_PROGRESS":
+        db.execute(
+            text("UPDATE tasks SET status = 'IN_PROGRESS' WHERE id = :tid"),
+            {"tid": task_id}
+        )
         db.commit()
-        return {
-            "message": "Task marked done. Moved to QA.",
-            "new_status": task.status.value
-        }
 
-    # -------------------------------------------------------
-    # GENERAL STATUS UPDATE (start task etc.)
-    # -------------------------------------------------------
-    status_map = {
-        "TODO": TaskStatus.TODO,
-        "DESIGN_IN_PROGRESS": TaskStatus.DESIGN_IN_PROGRESS,
-        "IN_PROGRESS": TaskStatus.IN_PROGRESS,
-        "READY_FOR_QA": TaskStatus.READY_FOR_QA,
-        "READY_TO_DEPLOY": TaskStatus.READY_TO_DEPLOY,
-    }
+        log_action(db, user_id, "TASK_STARTED", {
+            "task_id": task_id,
+            "title": row[1]
+        })
 
-    new_status = status_map.get(status_upper)
-    if not new_status:
+        return {"message": "Task started.", "new_status": "IN_PROGRESS"}
+
+    # ── DONE → auto-advance to READY_FOR_QA ─────────────
+    if status_upper == "DONE":
+        db.execute(
+            text("UPDATE tasks SET status = 'READY_FOR_QA' WHERE id = :tid"),
+            {"tid": task_id}
+        )
+        db.commit()
+
+        log_action(db, user_id, "TASK_SUBMITTED_FOR_QA", {
+            "task_id": task_id,
+            "title": row[1]
+        })
+
+        return {"message": "Task done. Moved to QA.", "new_status": "READY_FOR_QA"}
+
+    # ── General fallback ─────────────────────────────────
+    allowed = {"TODO", "DESIGN_IN_PROGRESS", "READY_FOR_QA", "READY_TO_DEPLOY"}
+    if status_upper not in allowed:
         raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
 
-    task.status = new_status
+    db.execute(
+        text("UPDATE tasks SET status = :s WHERE id = :tid"),
+        {"s": status_upper, "tid": task_id}
+    )
     db.commit()
-    return {"message": "Status updated", "new_status": task.status.value}
+
+    log_action(db, user_id, "TASK_STATUS_UPDATED", {
+        "task_id": task_id,
+        "title": row[1],
+        "new_status": status_upper
+    })
+
+    return {"message": "Status updated", "new_status": status_upper}
 
 
-# -------------------------
-# QA RESULT (tester)
-# -------------------------
-
-@router.patch("/{task_id}/qa-result")
-def qa_result(
-    task_id: int,
-    result: str,
-    db: Session = Depends(get_db),
-    token_data=Depends(decode_token)
-):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    if result.lower() == "pass":
-        task.status = TaskStatus.READY_TO_DEPLOY
-        message = "Task passed QA and is ready to deploy"
-    elif result.lower() == "fail":
-        # revert to developer
-        task.status = TaskStatus.IN_PROGRESS
-        message = "Task failed QA. Reverted to developer."
-    else:
-        raise HTTPException(status_code=400, detail="Result must be 'pass' or 'fail'")
-
-    db.commit()
-    return {"message": message, "status": task.status.value}
-
-
-# -------------------------
-# SAVE GIT LINK (developer)
-# -------------------------
-
-class GitLinkUpdate(BaseModel):
-    git_link: str
+# -------------------------------------------------------
+# PATCH /tasks/{id}/git-link
+# -------------------------------------------------------
 
 @router.patch("/{task_id}/git-link")
 def update_git_link(
@@ -229,18 +226,33 @@ def update_git_link(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
+    user_id = token_data["user_id"]
+
+    row = db.execute(
+        text("SELECT id, title FROM tasks WHERE id = :tid"),
+        {"tid": task_id}
+    ).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task.git_branch = data.git_link
+    db.execute(
+        text("UPDATE tasks SET git_branch = :url WHERE id = :tid"),
+        {"url": data.git_link, "tid": task_id}
+    )
     db.commit()
-    return {"message": "GitHub link saved", "git_branch": task.git_branch}
+
+    log_action(db, user_id, "GIT_LINK_SAVED", {
+        "task_id": task_id,
+        "title": row[1],
+        "git_link": data.git_link
+    })
+
+    return {"message": "GitHub link saved", "git_branch": data.git_link}
 
 
-# -------------------------
-# SUBMIT FOR QA (developer)
-# -------------------------
+# -------------------------------------------------------
+# PATCH /tasks/{id}/submit-for-qa
+# -------------------------------------------------------
 
 @router.patch("/{task_id}/submit-for-qa")
 def submit_for_qa(
@@ -248,27 +260,85 @@ def submit_for_qa(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
+    user_id = token_data["user_id"]
+
+    row = db.execute(
+        text("SELECT id, title, git_branch FROM tasks WHERE id = :tid"),
+        {"tid": task_id}
+    ).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    if not task.git_branch:
-        raise HTTPException(status_code=400, detail="Please save a GitHub link before submitting for QA")
+    if not row[2]:
+        raise HTTPException(
+            status_code=400,
+            detail="Please save a GitHub link before submitting for QA"
+        )
 
-    task.status = TaskStatus.READY_FOR_QA
-
-    # Decrement developer's active ticket count
-    if task.assignee and task.assignee.developer_profile:
-        count = task.assignee.developer_profile.active_ticket_count
-        task.assignee.developer_profile.active_ticket_count = max(0, count - 1)
-
+    db.execute(
+        text("UPDATE tasks SET status = 'READY_FOR_QA' WHERE id = :tid"),
+        {"tid": task_id}
+    )
     db.commit()
-    return {"message": "Task submitted for QA", "new_status": task.status.value}
+
+    log_action(db, user_id, "TASK_SUBMITTED_FOR_QA", {
+        "task_id": task_id,
+        "title": row[1],
+        "git_link": row[2]
+    })
+
+    return {"message": "Task submitted for QA", "new_status": "READY_FOR_QA"}
 
 
-# -------------------------
-# UPLOAD ASSET (designer)
-# -------------------------
+# -------------------------------------------------------
+# PATCH /tasks/{id}/qa-result
+# -------------------------------------------------------
+
+@router.patch("/{task_id}/qa-result")
+def qa_result(
+    task_id: int,
+    result: str,
+    db: Session = Depends(get_db),
+    token_data=Depends(decode_token)
+):
+    user_id = token_data["user_id"]
+
+    row = db.execute(
+        text("SELECT id, title FROM tasks WHERE id = :tid"),
+        {"tid": task_id}
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if result.lower() == "pass":
+        new_status = "READY_TO_DEPLOY"
+        action = "QA_PASSED"
+        message = "Task passed QA and is ready to deploy"
+    elif result.lower() == "fail":
+        new_status = "IN_PROGRESS"
+        action = "QA_FAILED"
+        message = "Task failed QA. Reverted to developer."
+    else:
+        raise HTTPException(status_code=400, detail="Result must be 'pass' or 'fail'")
+
+    db.execute(
+        text("UPDATE tasks SET status = :s WHERE id = :tid"),
+        {"s": new_status, "tid": task_id}
+    )
+    db.commit()
+
+    log_action(db, user_id, action, {
+        "task_id": task_id,
+        "title": row[1],
+        "new_status": new_status
+    })
+
+    return {"message": message, "status": new_status}
+
+
+# -------------------------------------------------------
+# POST /tasks/{id}/assets (designer)
+# -------------------------------------------------------
 
 @router.post("/{task_id}/assets")
 def upload_asset(
@@ -277,26 +347,25 @@ def upload_asset(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
+    user_id = token_data["user_id"]
+
+    row = db.execute(
+        text("SELECT id, title FROM tasks WHERE id = :tid"),
+        {"tid": task_id}
+    ).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task.git_branch = data.asset_url
+    db.execute(
+        text("UPDATE tasks SET git_branch = :url WHERE id = :tid"),
+        {"url": data.asset_url, "tid": task_id}
+    )
     db.commit()
+
+    log_action(db, user_id, "ASSET_UPLOADED", {
+        "task_id": task_id,
+        "title": row[1],
+        "asset_url": data.asset_url
+    })
+
     return {"message": "Asset URL saved", "asset_url": data.asset_url}
-
-
-# -------------------------
-# FORMAT HELPER
-# -------------------------
-
-def _format_task(t: Task):
-    return {
-        "id": t.id,
-        "title": t.title,
-        "status": t.status.value if t.status else "TODO",
-        "priority": t.priority.value if t.priority else "MEDIUM",
-        "git_branch": t.git_branch,
-        "request_id": t.request_id,
-        "assigned_to": t.assigned_to,
-    }

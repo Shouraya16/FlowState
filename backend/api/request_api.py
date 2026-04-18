@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import DataError
+from sqlalchemy import text
+import traceback
 
 from database import get_db
 from schema import (
@@ -9,17 +10,14 @@ from schema import (
     Task, TaskStatus, TaskPriority
 )
 from utils.jwt_handler import decode_token
+from utils.audit import log_action
 
 router = APIRouter(prefix="/requests", tags=["Feature Requests"])
 
 
-# -------------------------
-# HELPER — best designer by active task count
-# FIX: wrapped the .count() in a try/except so that if
-# DESIGN_IN_PROGRESS doesn't exist in the DB enum yet
-# (migration not run), it falls back to counting only TODO tasks
-# instead of crashing the whole request with a 500.
-# -------------------------
+# -------------------------------------------------------
+# HELPER — best designer by raw task count (no enum cast)
+# -------------------------------------------------------
 
 def get_best_designer(db: Session):
     designers = (
@@ -34,21 +32,11 @@ def get_best_designer(db: Session):
     lowest = float("inf")
 
     for emp in designers:
-        try:
-            # Primary query — uses both statuses (works after migration)
-            count = db.query(Task).filter(
-                Task.assigned_to == emp.id,
-                Task.status.in_([TaskStatus.TODO, TaskStatus.DESIGN_IN_PROGRESS])
-            ).count()
-        except DataError:
-            # Fallback — DESIGN_IN_PROGRESS not in DB yet (migration pending)
-            # Roll back the failed query so the session stays usable
-            db.rollback()
-            count = db.query(Task).filter(
-                Task.assigned_to == emp.id,
-                Task.status == TaskStatus.TODO
-            ).count()
-
+        result = db.execute(
+            text("SELECT COUNT(*) FROM tasks WHERE assigned_to = :eid"),
+            {"eid": emp.id}
+        )
+        count = result.scalar() or 0
         if count < lowest:
             lowest = count
             best = emp
@@ -56,9 +44,9 @@ def get_best_designer(db: Session):
     return best
 
 
-# -------------------------
-# SUBMIT REQUEST (client)
-# -------------------------
+# -------------------------------------------------------
+# POST /requests
+# -------------------------------------------------------
 
 @router.post("")
 def submit_request(
@@ -77,20 +65,21 @@ def submit_request(
         title=request.title,
         description=request.description
     )
-
     db.add(new_request)
     db.commit()
     db.refresh(new_request)
 
-    return {
-        "message": "Feature request submitted",
-        "request_id": new_request.id
-    }
+    log_action(db, user_id, "REQUEST_SUBMITTED", {
+        "request_id": new_request.id,
+        "title": new_request.title
+    })
+
+    return {"message": "Feature request submitted", "request_id": new_request.id}
 
 
-# -------------------------
-# GET ALL REQUESTS (with task info)
-# -------------------------
+# -------------------------------------------------------
+# GET /requests
+# -------------------------------------------------------
 
 @router.get("")
 def get_requests(
@@ -112,28 +101,35 @@ def get_requests(
 
     result = []
     for r in requests:
-        task = db.query(Task).filter(Task.request_id == r.id).first()
+        row = db.execute(
+            text("SELECT id, status, assigned_to, priority FROM tasks WHERE request_id = :rid LIMIT 1"),
+            {"rid": r.id}
+        ).fetchone()
+
+        task_data = None
+        if row:
+            task_data = {
+                "id": row[0],
+                "status": row[1],
+                "assigned_to": row[2],
+                "priority": row[3],
+            }
+
         result.append({
             "id": r.id,
             "title": r.title,
             "description": r.description,
             "status": r.status.value,
             "client_id": r.client_id,
-            "task": {
-                "id": task.id,
-                "status": task.status.value,
-                "assigned_to": task.assigned_to,
-                "priority": task.priority.value,
-            } if task else None
+            "task": task_data,
         })
 
     return result
 
 
-# -------------------------
-# APPROVE / REJECT
-# On APPROVED: auto-create task + assign to best designer
-# -------------------------
+# -------------------------------------------------------
+# PATCH /requests/{id}/status
+# -------------------------------------------------------
 
 @router.patch("/{request_id}/status")
 def update_status(
@@ -152,88 +148,108 @@ def update_status(
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # Validate status value
-    try:
-        new_status = RequestStatus(status)
-    except Exception:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    status_upper = status.strip().upper()
 
-    task_info = None
+    # ── APPROVE ──────────────────────────────────────────
+    if status_upper == "APPROVED":
+        try:
+            existing = db.execute(
+                text("SELECT id, assigned_to FROM tasks WHERE request_id = :rid LIMIT 1"),
+                {"rid": request_id}
+            ).fetchone()
 
-    # -----------------------------------------------
-    # APPROVAL BRANCH
-    # -----------------------------------------------
-    if new_status == RequestStatus.APPROVED:
+            if existing:
+                req.status = RequestStatus.IN_PROGRESS
+                db.commit()
+                return {
+                    "message": "Request already has a task",
+                    "new_status": req.status.value,
+                    "task": {
+                        "task_id": existing[0],
+                        "assigned_to_designer": existing[1],
+                        "status": "DESIGN_IN_PROGRESS",
+                    }
+                }
 
-        # Check task doesn't already exist for this request
-        existing_task = db.query(Task).filter(Task.request_id == request_id).first()
+            designer = get_best_designer(db)
+            designer_id = designer.id if designer else None
 
-        if existing_task:
-            # Already has a task — just update request status
+            safe_title = (
+                req.title.lower()
+                .replace(" ", "-")
+                .replace(",", "")
+                .replace(".", "")
+                .replace("/", "")
+            )
+
+            # Raw SQL insert — avoids SQLAlchemy enum cast errors
+            db.execute(text("""
+                INSERT INTO tasks (request_id, title, priority, status, assigned_to, git_branch)
+                VALUES (:rid, :title, 'MEDIUM', 'DESIGN_IN_PROGRESS', :assigned_to, :branch)
+            """), {
+                "rid": request_id,
+                "title": req.title,
+                "assigned_to": designer_id,
+                "branch": f"feature/{safe_title}"
+            })
+
+            task_row = db.execute(
+                text("SELECT id FROM tasks WHERE request_id = :rid ORDER BY id DESC LIMIT 1"),
+                {"rid": request_id}
+            ).fetchone()
+            task_id = task_row[0] if task_row else None
+
             req.status = RequestStatus.IN_PROGRESS
             db.commit()
+
+            log_action(db, user_id, "REQUEST_APPROVED", {
+                "request_id": request_id,
+                "title": req.title,
+                "task_id": task_id,
+                "assigned_to_designer": designer_id
+            })
+
+            if designer:
+                log_action(db, designer_id, "TASK_ASSIGNED", {
+                    "task_id": task_id,
+                    "title": req.title,
+                    "assigned_by": user_id,
+                    "phase": "DESIGN"
+                })
+
             return {
-                "message": "Request already has a task",
+                "message": f"Approved. Task #{task_id} created and assigned to designer.",
                 "new_status": req.status.value,
                 "task": {
-                    "task_id": existing_task.id,
-                    "assigned_to_designer": existing_task.assigned_to,
-                    "status": existing_task.status.value
+                    "task_id": task_id,
+                    "assigned_to_designer": designer_id,
+                    "status": "DESIGN_IN_PROGRESS",
+                    "warning": "No designer found — signup a Designer user first" if not designer_id else None,
                 }
             }
 
-        # Find best available designer
-        designer = get_best_designer(db)
+        except Exception as e:
+            db.rollback()
+            print("APPROVAL ERROR:\n", traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Approval failed: {str(e)}")
 
-        # Create task and assign to designer immediately
-        task = Task(
-            request_id=request_id,
-            title=req.title,
-            priority=TaskPriority.MEDIUM,
-            status=TaskStatus.DESIGN_IN_PROGRESS,
-            assigned_to=designer.id if designer else None,
-            git_branch=f"feature/{req.title.lower().replace(' ', '-').replace(',', '').replace('.', '')}"
-        )
-
-        db.add(task)
-
-        # Request moves to IN_PROGRESS (not APPROVED — it's now being worked on)
-        req.status = RequestStatus.IN_PROGRESS
-
-        db.commit()
-        db.refresh(task)
-
-        task_info = {
-            "task_id": task.id,
-            "assigned_to_designer": designer.id if designer else None,
-            "status": task.status.value
-        }
-
-        return {
-            "message": f"Request approved. Task #{task.id} created and assigned to Designer.",
-            "new_status": req.status.value,
-            "task": task_info
-        }
-
-    # -----------------------------------------------
-    # REJECTION BRANCH
-    # -----------------------------------------------
-    if new_status == RequestStatus.REJECTED:
+    # ── REJECT ───────────────────────────────────────────
+    if status_upper == "REJECTED":
         req.status = RequestStatus.REJECTED
         db.commit()
-        return {
-            "message": "Request rejected.",
-            "new_status": req.status.value,
-            "task": None
-        }
 
-    # -----------------------------------------------
-    # ANY OTHER STATUS UPDATE
-    # -----------------------------------------------
-    req.status = new_status
+        log_action(db, user_id, "REQUEST_REJECTED", {
+            "request_id": request_id,
+            "title": req.title
+        })
+
+        return {"message": "Request rejected", "new_status": "REJECTED", "task": None}
+
+    # ── OTHER ────────────────────────────────────────────
+    try:
+        req.status = RequestStatus(status_upper)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
     db.commit()
-    return {
-        "message": "Status updated",
-        "new_status": req.status.value,
-        "task": None
-    }
+    return {"message": "Status updated", "new_status": req.status.value, "task": None}

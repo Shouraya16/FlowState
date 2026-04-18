@@ -11,10 +11,8 @@ import schema
 
 app = FastAPI(title="FlowState API")
 
-# Create all tables
 Base.metadata.create_all(bind=engine)
 
-# CORS — allow frontend origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,12 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register all routers
 app.include_router(auth_router)
 app.include_router(request_router)
 app.include_router(task_router)
 app.include_router(admin_router)
-
 
 @app.get("/")
 def read_root():

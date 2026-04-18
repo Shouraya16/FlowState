@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schema import User, Employee, Client, Admin, AuditLog, UserType
+from schema import User, Employee, AuditLog, UserType
 from utils.jwt_handler import decode_token
+from utils.audit import log_action
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -15,9 +16,9 @@ def require_admin(token_data, db: Session):
     return user
 
 
-# -------------------------
-# GET ALL USERS
-# -------------------------
+# -------------------------------------------------------
+# GET /admin/users
+# -------------------------------------------------------
 
 @router.get("/users")
 def get_all_users(
@@ -31,7 +32,6 @@ def get_all_users(
 
     for u in users:
         role = u.user_type.value
-
         if u.employee_profile:
             role = u.employee_profile.employee_type.value
 
@@ -45,9 +45,9 @@ def get_all_users(
     return result
 
 
-# -------------------------
-# DELETE USER
-# -------------------------
+# -------------------------------------------------------
+# DELETE /admin/users/{id}
+# -------------------------------------------------------
 
 @router.delete("/users/{user_id}")
 def delete_user(
@@ -55,7 +55,7 @@ def delete_user(
     db: Session = Depends(get_db),
     token_data=Depends(decode_token)
 ):
-    require_admin(token_data, db)
+    admin_user = require_admin(token_data, db)
 
     if token_data["user_id"] == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
@@ -64,15 +64,23 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    email = user.email
     db.delete(user)
     db.commit()
+
+    log_action(db, token_data["user_id"], "USER_DELETED", {
+        "deleted_user_id": user_id,
+        "deleted_email": email,
+        "deleted_by": admin_user.email
+    })
 
     return {"message": "User removed"}
 
 
-# -------------------------
-# GET AUDIT LOGS
-# -------------------------
+# -------------------------------------------------------
+# GET /admin/audit-logs
+# Returns last 200 logs with user email, action, details, time
+# -------------------------------------------------------
 
 @router.get("/audit-logs")
 def get_audit_logs(
@@ -81,15 +89,20 @@ def get_audit_logs(
 ):
     require_admin(token_data, db)
 
-    logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(100).all()
+    logs = (
+        db.query(AuditLog)
+        .order_by(AuditLog.timestamp.desc())
+        .limit(200)
+        .all()
+    )
 
     return [
         {
             "id": log.id,
             "user_id": log.user_id,
-            "user_email": log.user.email if log.user else None,
+            "user_email": log.user.email if log.user else "System",
             "action_type": log.action_type,
-            "details": log.details,
+            "details": log.details or {},
             "timestamp": log.timestamp.isoformat() if log.timestamp else None
         }
         for log in logs

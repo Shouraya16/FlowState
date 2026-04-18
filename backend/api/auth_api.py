@@ -3,16 +3,13 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from database import get_db
-from schema import User, Client, Employee, UserType, EmployeeType
+from schema import User, Client, Employee, Admin, UserType, EmployeeType
 from utils.security import hash_password, verify_password
 from utils.jwt_handler import create_token
+from utils.audit import log_action
 
 router = APIRouter(prefix="/auth")
 
-
-# -------------------------
-# REQUEST MODELS
-# -------------------------
 
 class SignupRequest(BaseModel):
     email: str
@@ -33,53 +30,44 @@ class LoginRequest(BaseModel):
 @router.post("/signup")
 def signup(data: SignupRequest, db: Session = Depends(get_db)):
 
-    # 🔍 CHECK EXISTING USER
     existing_user = db.query(User).filter(User.email == data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
 
     hashed_pw = hash_password(data.password)
 
-    # 🔥 FIX: HANDLE CASE + ENUM
     try:
         user_type_enum = UserType(data.user_type.upper())
-    except:
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid user type")
 
-    # ✅ CREATE USER
     new_user = User(
         email=data.email,
         password_hash=hashed_pw,
         user_type=user_type_enum
     )
-
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    # -------------------------
-    # CREATE ROLE PROFILE
-    # -------------------------
+    role_label = user_type_enum.value
 
     if user_type_enum == UserType.CLIENT:
-
-        client = Client(
-            user_id=new_user.id,
-            company_name="Default Company"
-        )
-
+        client = Client(user_id=new_user.id, company_name="Default Company")
         db.add(client)
         db.commit()
-        db.refresh(client)
+
+    elif user_type_enum == UserType.ADMIN:
+        admin = Admin(user_id=new_user.id, access_level=1)
+        db.add(admin)
+        db.commit()
 
     elif user_type_enum == UserType.EMPLOYEE:
-
         if not data.employee_type:
             raise HTTPException(status_code=400, detail="Employee role required")
-
         try:
             emp_type_enum = EmployeeType(data.employee_type.upper())
-        except:
+        except Exception:
             raise HTTPException(status_code=400, detail="Invalid employee type")
 
         employee = Employee(
@@ -87,10 +75,14 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
             emp_id=f"EMP{new_user.id}",
             employee_type=emp_type_enum
         )
-
         db.add(employee)
         db.commit()
-        db.refresh(employee)
+        role_label = emp_type_enum.value
+
+    log_action(db, new_user.id, "USER_SIGNUP", {
+        "email": new_user.email,
+        "role": role_label
+    })
 
     return {"message": "User created successfully"}
 
@@ -108,14 +100,14 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user.id)
-
     role = user.user_type.value
 
-    # 🔥 if employee → return actual role
     if role == "EMPLOYEE" and user.employee_profile:
         role = user.employee_profile.employee_type.value
 
-    return {
-        "token": token,
+    log_action(db, user.id, "USER_LOGIN", {
+        "email": user.email,
         "role": role
-    }
+    })
+
+    return {"token": token, "role": role}
